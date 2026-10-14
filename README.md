@@ -4,7 +4,7 @@ A CLI tool that manages a dynasty fantasy football team on [Sleeper](https://sle
 
 It is built for **one specific league shape**: 12 teams, 1QB, full PPR, no TE premium, a 3-round rookie-only startup/rookie draft. It will run against a differently-shaped Sleeper dynasty league, since your real league settings and scoring get pulled live, however some of the tuning (the age curve, the QB-discount and WR-bump multipliers, the situation score weights) was calibrated for that shape specifically. Read `CLAUDE.md` for the full reasoning behind those numbers before trusting them blindly in, say, a superflex or half-PPR league.
 
-**On Windows?** Everything below works identically, same Python, same `uv`, same commands, checked directly rather than assumed. See [`WINDOWS.md`](WINDOWS.md) for PowerShell-specific install steps and command syntax (line continuation is a backtick, not a backslash) instead of translating the Bash examples below yourself.
+**On Windows?** Everything below works identically, same Python, same `pip`, same commands, checked directly rather than assumed. See [`WINDOWS.md`](WINDOWS.md) for PowerShell-specific install steps and command syntax (line continuation is a backtick, not a backslash) instead of translating the Bash examples below yourself.
 
 ## What it does today
 
@@ -31,28 +31,27 @@ It is built for **one specific league shape**: 12 teams, 1QB, full PPR, no TE pr
 
 ## Requirements
 
-- Python 3.12, managed by [`uv`](https://docs.astral.sh/uv/). If you don't have `uv`:
-  ```
-  curl -LsSf https://astral.sh/uv/install.sh | sh
-  ```
+- Python 3.12 or newer (`python3 --version` to check; get it from [python.org](https://www.python.org/downloads/) if needed).
 - A Sleeper account that's a member of at least one dynasty league. You don't need an API key, Sleeper's read API is public.
 
 ## Install
 
 ```
-git clone https://github.com/3schtocky/Sleeper-Dynasty-AI-Agent.git
-cd Sleeper-Dynasty-AI-Agent
-uv sync
+git clone https://github.com/3schtocky/Sleeper-Dynasty-Agent.git
+cd Sleeper-Dynasty-Agent
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
 ```
 
-`uv sync` creates a `.venv`, installs Python 3.12 if you don't already have it, and installs every dependency pinned in `uv.lock`.
+This creates a `.venv` and installs every dependency from `pyproject.toml`. Run `source .venv/bin/activate` in each new terminal window before using `dynasty-agent`.
 
 ## Point it at your own league
 
 Nothing about your Sleeper account or league is hardcoded. Run:
 
 ```
-uv run dynasty-agent init --username <your-sleeper-username>
+dynasty-agent init --username <your-sleeper-username>
 ```
 
 This looks up your Sleeper user ID, finds your current-season dynasty leagues, and writes a `.env` file (already in `.gitignore`, it never gets committed) with your username, user ID, league ID, and draft ID. If you're in more than one league this season, it lists them and asks you to re-run with `--league-id <id>` to pick one.
@@ -64,10 +63,10 @@ If your league isn't 12-team/1QB/full-PPR, also set the `FANTASYCALC_NUM_QBS` / 
 ## Run it
 
 ```
-uv run dynasty-agent refresh                        # everything current: league, values, this season's stats
-uv run dynasty-agent roster                         # sanity check: is this your team?
-uv run dynasty-agent valuate                        # win-now/three-year value + the verdict
-uv run dynasty-agent schedule --install             # optional, macOS: run refresh daily at 06:00 (--at to change)
+dynasty-agent refresh                        # everything current: league, values, this season's stats
+dynasty-agent roster                         # sanity check: is this your team?
+dynasty-agent valuate                        # win-now/three-year value + the verdict
+dynasty-agent schedule --install             # optional, macOS: run refresh daily at 06:00 (--at to change)
 ```
 
 First run on a new machine, before `refresh` has anything to build on: `sync`, then `ingest-nflverse --season <last completed season>`, `ingest-draft-data`, `ingest-college --season 2008 --through <current season>`, and `fit-prospect-model`. After that, `refresh` keeps it all current. Each ingest command still works on its own; `ingest-nflverse` re-downloads the current season automatically and takes `--force` for any other.
@@ -75,7 +74,7 @@ First run on a new machine, before `refresh` has anything to build on: `sync`, t
 Evaluate a trade, players by name or Sleeper `player_id`, picks written any common way (`2027-1`, `"2027 1st"`, `"2027 early 1st"`, `"2027 1.05"`; a tier or slot gets FantasyCalc's tiered price):
 
 ```
-uv run dynasty-agent trade \
+dynasty-agent trade \
   --send "Rashee Rice" \
   --receive-pick 2027-1 --receive-pick 2027-3 \
   --discount-rate 0.20
@@ -86,7 +85,7 @@ uv run dynasty-agent trade \
 Estimate a matchup for a specific week, any two rosters, kicker and defense included if you want, players by name or `player_id`:
 
 ```
-uv run dynasty-agent predict-matchup --week 1 \
+dynasty-agent predict-matchup --week 1 \
   --team-a "Jalen Hurts" --team-a "Derrick Henry" --team-a "Puka Nacua" \
   --team-b "Jayden Daniels" --team-b "James Cook" --team-b "Drake London"
 ```
@@ -96,19 +95,19 @@ uv run dynasty-agent predict-matchup --week 1 \
 Optimize your own lineup for a real week, against your real Sleeper opponent:
 
 ```
-uv run dynasty-agent optimize-lineup --week 1
+dynasty-agent optimize-lineup --week 1
 ```
 
 Size a FAAB bid on a specific waiver target:
 
 ```
-uv run dynasty-agent faab --player "Marquise Brown"
+dynasty-agent faab --player "Marquise Brown"
 ```
 
 Or just run the whole week in one shot, lineup, win probability, wind flags, and sized FAAB targets:
 
 ```
-uv run dynasty-agent digest --week 1
+dynasty-agent digest --week 1
 ```
 
 `digest` makes real live network calls per recommended starter (checking wind for their specific game), so it's the slowest command here, correctness kept over shaving that down.
@@ -130,7 +129,7 @@ One-time setup:
 Then:
 
 ```
-uv run dynasty-agent chat
+dynasty-agent chat
 ```
 
 It refreshes your league data while the model loads, then takes questions:
@@ -151,11 +150,13 @@ What keeps it honest:
 - **Trade sides are checked against the rosters.** If the model puts a player you own on the side you'd receive, the evaluation moves them and says so.
 - **It can't change your roster.** Sleeper's API is read-only: make every move in the Sleeper app.
 
+Ask how it works and it shows the calculation with your own numbers, then explains it in plain language: "How did you get Trey Benson's win-now value?", "Why is his 3yr lower?", "What does situation score mean?", "Why does age matter for running backs?". The steps come from the same constants that produce the number and are checked against it before they are shown, so the model can retell them but not invent them. It works for a player's value, a trade ("why?" after the answer), the lineup's win probability, a FAAB bid, the contend or rebuild call, and a buy, hold or sell on a pick. Follow-ups like "why?" refer to the last answer.
+
 Commands inside the chat: `/raw` shows what the model was given for the last answer, `/stats off` hides the stats line, `/help`, `/quit`. `--no-refresh` skips the start-up refresh for a quick restart.
 
 **Watch it run** from a second terminal window: `ollama ps` shows the loaded model and its memory, and `tail -f ~/.ollama/logs/server.log` shows every request as it arrives.
 
-**Settings**, in `.env`: `LLM_MODEL` (default `qwen3:4b-instruct`, chosen by a bake-off of eight small models, see `PLANNING.md`) and `OLLAMA_URL` (default `http://localhost:11434`). `uv run dynasty-agent chat-eval --model <name>` scores any other Ollama model on the same 39 questions before you switch.
+**Settings**, in `.env`: `LLM_MODEL` (default `qwen3:4b-instruct`, chosen by a bake-off of eight small models, see `PLANNING.md`) and `OLLAMA_URL` (default `http://localhost:11434`). `dynasty-agent chat-eval --model <name>` scores any other Ollama model on the same 39 questions before you switch.
 
 This is a preview: a small model runs at about 30 tokens per second on a MacBook Air M4, and it will sometimes phrase an answer awkwardly. The numbers above each answer are always the real ones.
 

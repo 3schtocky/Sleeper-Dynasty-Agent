@@ -1,7 +1,7 @@
 """Local model bake-off for Phase 5: routing accuracy, grounded answers, and speed, identical for
 every model. Run against a running Ollama:
 
-    uv run python benchmarks/model_bench.py qwen3:4b-instruct gemma4:e2b
+    python benchmarks/model_bench.py qwen3:4b-instruct gemma4:e2b
 
 Prints one JSON line per model. Results from 2026-09-28 are recorded in PLANNING.md (Phase 5,
 step 0) and in ~/Open Source Models/MODELS.md. A starting point for Phase 5 step 6's evaluation

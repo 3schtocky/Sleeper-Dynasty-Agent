@@ -10,7 +10,7 @@ wheels/
 .venv
 
 # Local data cache (SQLite, DuckDB, parquet, downloaded nflverse files)
-data/
+/data/
 *.db
 *.sqlite
 *.duckdb

@@ -37,6 +37,7 @@ from datetime import date
 
 import duckdb
 
+from dynasty_agent.errors import AgentError
 from dynasty_agent import nflverse
 from dynasty_agent.college import is_power_conference
 from dynasty_agent.db import utcnow
@@ -350,7 +351,7 @@ def fit_ridge(x: list[list[float]], y: list[float], ridge_lambda: float = RIDGE_
 
 
 def predict(weights: list[float], features: list[float]) -> float:
-    return weights[0] + sum(w * v for w, v in zip(weights[1:], features))
+    return weights[0] + sum(w * v for w, v in zip(weights[1:], features, strict=True))
 
 
 def _matrix(rows: list[dict], names: tuple[str, ...]) -> list[list[float]]:
@@ -365,15 +366,29 @@ def leave_one_class_out(rows: list[dict], names: tuple[str, ...]) -> dict:
         train = [r for r in rows if r["draft_class"] != held]
         test = [r for r in rows if r["draft_class"] == held]
         w = fit_ridge(_matrix(train, names), [r["target"] for r in train])
-        for r, feats in zip(test, _matrix(test, names)):
+        for r, feats in zip(test, _matrix(test, names), strict=True):
             p = predict(w, feats)
             preds.append(p)
             targets.append(r["target"])
             errors.append(abs(p - r["target"]))
     mean_t = sum(targets) / len(targets)
     ss_tot = sum((t - mean_t) ** 2 for t in targets)
-    ss_res = sum((t - p) ** 2 for t, p in zip(targets, preds))
+    ss_res = sum((t - p) ** 2 for t, p in zip(targets, preds, strict=True))
     return {"mae": sum(errors) / len(errors), "r2": 1 - ss_res / ss_tot if ss_tot else 0.0, "n": len(targets)}
+
+
+MIN_COVERAGE = 0.8
+
+
+def coverage_warning(coverage: dict) -> str | None:
+    """A fit on a small share of the drafted players is far weaker than it
+    looks, and the usual cause is a half-finished first-run college backfill."""
+    if coverage["drafted"] and coverage["used"] < MIN_COVERAGE * coverage["drafted"]:
+        return (
+            f"WARNING: only {coverage['used']} of {coverage['drafted']} drafted players had college data, so this fit is weak. "
+            "Rerun `dynasty-agent ingest-college --season 2008 --through <current season>` (it resumes where it stopped), then refit."
+        )
+    return None
 
 
 def fit_and_store(conn: sqlite3.Connection, scoring_settings: dict, last_complete_season: int) -> dict:
@@ -383,6 +398,13 @@ def fit_and_store(conn: sqlite3.Connection, scoring_settings: dict, last_complet
     full report."""
     classes = training_classes(last_complete_season)
     rows, coverage = training_rows(conn, scoring_settings, classes)
+    if not rows:
+        raise AgentError(
+            f"No training data for the {classes.start}-{classes.stop - 1} draft classes ({coverage['drafted']} drafted, "
+            f"{coverage['no_college_link']} with no college stats). On a new machine run `dynasty-agent ingest-college "
+            f"--season 2008 --through <current season>` and `dynasty-agent ingest-nflverse --season <year>` for each "
+            f"NFL season from {classes.start}, then `dynasty-agent fit-prospect-model` (README, first run)."
+        )
     report = {"coverage": coverage, "classes": [classes.start, classes.stop - 1], "variants": {}}
     for variant, names in VARIANTS:
         rows_v = [r for r in rows if all(r["features"][n] is not None for n in names)]

@@ -261,11 +261,26 @@ class _BrokenStream:
 
 
 def test_interrupted_download_never_leaves_a_file_that_looks_cached(tmp_path, monkeypatch):
+    monkeypatch.setattr(nflverse.time, "sleep", lambda s: None)
     monkeypatch.setattr(nflverse.httpx, "stream", lambda *a, **kw: _BrokenStream())
     dest = tmp_path / "pbp_2025.parquet"
     with pytest.raises(httpx.ReadError):
         nflverse.download("https://example.invalid/file.parquet", dest)
     assert not dest.exists()
+
+
+class _GoodStream(_BrokenStream):
+    def iter_bytes(self, chunk_size):
+        yield b"whole file"
+
+
+def test_download_retries_a_dropped_connection_then_succeeds(tmp_path, monkeypatch):
+    monkeypatch.setattr(nflverse.time, "sleep", lambda s: None)
+    streams = iter([_BrokenStream(), _GoodStream()])
+    monkeypatch.setattr(nflverse.httpx, "stream", lambda *a, **kw: next(streams))
+    dest = tmp_path / "pbp_2025.parquet"
+    assert nflverse.download("https://example.invalid/file.parquet", dest) == dest
+    assert dest.read_bytes() == b"whole file"
 
 
 # -- combine ----------------------------------------------------------------------

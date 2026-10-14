@@ -72,3 +72,16 @@ def test_is_power_conference_tracks_realignment():
 def test_games_scheduled_changed_in_2021():
     assert pm.games_scheduled(2020) == 16
     assert pm.games_scheduled(2021) == 17
+
+
+def test_fit_on_a_new_machine_says_what_to_ingest_instead_of_crashing(conn, monkeypatch):
+    from dynasty_agent.errors import AgentError
+
+    monkeypatch.setattr(pm, "first_three_season_ppg", lambda scoring, seasons: {})
+    with pytest.raises(AgentError, match="ingest-college"):
+        pm.fit_and_store(conn, {}, 2025)
+
+
+def test_coverage_warning_flags_a_half_finished_backfill():
+    assert pm.coverage_warning({"drafted": 475, "used": 74, "no_college_link": 401, "no_birthdate": 0}) is not None
+    assert pm.coverage_warning({"drafted": 475, "used": 429, "no_college_link": 46, "no_birthdate": 0}) is None

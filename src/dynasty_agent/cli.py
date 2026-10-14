@@ -59,7 +59,7 @@ def cmd_init(args: argparse.Namespace) -> None:
     )
     print(f"Wrote {config.ENV_PATH}")
     print(f"League: {league['name']} ({league['league_id']}, {league.get('season') or season} season)")
-    print("Next: `dynasty-agent sync`")
+    print("Next: `dynasty-agent sync`, then the rest of \"First run on a new machine\" in README.md (or `dynasty-agent refresh` once those are done).")
 
 
 def cmd_sync(args: argparse.Namespace) -> None:
@@ -170,6 +170,8 @@ def cmd_fit_prospect_model(args: argparse.Namespace) -> None:
         f"Coverage: {cov['drafted']} drafted, {cov['used']} used, {cov['no_college_link']} with no exact college "
         f"link, {cov['no_birthdate']} with no birth date.\n"
     )
+    if warning := prospect_model.coverage_warning(cov):
+        print(warning + "\n")
     print("Target: fantasy points per game scheduled over each player's first 3 NFL seasons.")
     print("Scored by leaving one draft class out at a time and predicting it from the rest:\n")
     labels = {

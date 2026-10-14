@@ -13,6 +13,7 @@ def test_no_tool_asks_the_model_for_week_season_or_roster():
     for tool in tools.TOOLS:
         props = set(tool["function"]["parameters"]["properties"])
         assert not props & {"week", "season", "roster", "roster_id", "team", "league"}, tool["function"]["name"]
+    # explain is not offered to the model (a seventh tool cost it routing accuracy); Python calls it.
     assert tools.TOOL_NAMES == ["set_lineup", "evaluate_trade", "my_team", "waiver_targets", "pick_advice", "taxi_plan"]
 
 
@@ -121,3 +122,140 @@ def test_a_free_agent_is_never_moved_only_warned_about(league):
 
 def test_none_in_an_optional_argument_means_blank(league):
     assert tools.run_tool(league, "waiver_targets", {"player": "none", "position": "null"}).numbers.startswith("FAAB targets")
+
+
+# -- explain ------------------------------------------------------------------------
+
+
+def test_explain_walks_one_players_value_and_it_matches_the_valuation_shown(league):
+    from dynasty_agent import valuation
+
+    r = tools.run_tool(league, "explain", {"topic": "win-now value", "player": "Jonah Coleman"})
+    v = valuation.player_valuations(league, 2025)["mine"]
+    assert r.clarification is None and r.take
+    assert r.numbers.startswith("How Jonah Coleman's value is built")
+    assert f"= {v['win_now_value']:.1f}" in r.numbers and f"= {v['three_year_value']:.1f}" in r.numbers
+    assert r.data == {"player_id": "mine", "full_name": "Jonah Coleman"}
+    json.dumps(r.compact)
+
+
+def test_explain_a_definition_is_python_text_and_needs_no_model_take(league):
+    r = tools.run_tool(league, "explain", {"topic": "what does arbitrage mean"})
+    assert not r.take and "FantasyCalc" in r.numbers and r.numbers == r.compact["definition"]
+
+
+def test_explain_that_finds_the_one_player_in_the_last_answer(league):
+    shown = tools.run_tool(league, "waiver_targets", {"player": "Player fa"})
+    r = tools.run_tool(league, "explain", {"topic": "how did you get that win-now value"}, recent=[shown])
+    assert r.numbers.startswith("How Player fa's value is built")
+
+
+def test_explain_asks_whose_number_when_the_last_answer_has_several_players(league):
+    shown = tools.run_tool(league, "evaluate_trade", {"send_players": ["Jonah Coleman"], "receive_players": ["Puka Nacua"]})
+    r = tools.run_tool(league, "explain", {"topic": "how did you calculate the win-now numbers"}, recent=[shown])
+    assert r.clarification.startswith("Whose number should I walk through:")
+    assert "Jonah Coleman" in r.clarification and "Puka Nacua" in r.clarification
+
+
+def test_explain_a_follow_up_about_the_same_player_uses_the_explanation_before_it(league):
+    first = tools.run_tool(league, "explain", {"topic": "win-now value", "player": "Puka Nacua"})
+    r = tools.run_tool(league, "explain", {"topic": "how did you get his 3yr value"}, recent=[first])
+    assert r.numbers.startswith("How Puka Nacua's value is built")
+
+
+def test_why_about_a_value_term_explains_the_players_calculation_not_the_definition(league):
+    first = tools.run_tool(league, "explain", {"topic": "win-now value", "player": "Puka Nacua"})
+    r = tools.run_tool(league, "explain", {"topic": "Why is his 3yr lower?"}, recent=[first])
+    assert r.numbers.startswith("How Puka Nacua's value is built") and r.take
+    plain = tools.run_tool(league, "explain", {"topic": "What does 3yr mean?"}, recent=[first])
+    assert not plain.take  # a plain definition question stays a definition
+
+
+def test_explain_finds_the_player_named_in_the_question_itself(league):
+    r = tools.run_tool(league, "explain", {"topic": "How did you get Jonah Coleman's win-now value?"})
+    assert r.numbers.startswith("How Jonah Coleman's value is built")
+
+
+def test_explain_with_nothing_to_go_on_says_what_it_can_do(league):
+    r = tools.run_tool(league, "explain", {"topic": "how did you get that"})
+    assert r.clarification.startswith("Which number should I explain?")
+
+
+def test_explain_an_ambiguous_player_is_still_a_question(league):
+    add_player(league, "kw1", "RB", 9.0)
+    add_player(league, "kw2", "WR", 3.0, team=None)
+    league.execute("UPDATE players SET full_name = 'Kenneth Walker' WHERE player_id IN ('kw1', 'kw2')")
+    r = tools.run_tool(league, "explain", {"topic": "win-now value", "player": "Kenneth Walker"})
+    assert r.clarification.startswith("Which Kenneth Walker")
+
+
+# -- explain: which calculation a follow-up means --------------------------------------
+
+
+def _lineup_result():
+    from tests.test_explain import lineup_result
+
+    return tools.ToolResult("set_lineup", data=lineup_result())
+
+
+def test_a_bare_why_after_a_trade_explains_the_trade_not_one_player(league):
+    shown = tools.run_tool(league, "evaluate_trade", {"send_players": ["Jonah Coleman"], "receive_players": ["Puka Nacua"]})
+    r = tools.run_tool(league, "explain", {"topic": "why?"}, recent=[shown])
+    assert r.numbers.startswith("How this trade was evaluated") and r.take
+
+
+def test_a_second_why_after_the_trade_explanation_finds_the_trade_again(league):
+    shown = tools.run_tool(league, "evaluate_trade", {"send_players": ["Jonah Coleman"], "receive_players": ["Puka Nacua"]})
+    first = tools.run_tool(league, "explain", {"topic": "why?"}, recent=[shown])
+    again = tools.run_tool(league, "explain", {"topic": "how did you get that net market value"}, recent=[shown, first])
+    assert again.numbers.startswith("How this trade was evaluated")
+
+
+def test_win_probability_after_a_lineup_explains_the_lineup_and_without_one_defines_it(league):
+    r = tools.run_tool(league, "explain", {"topic": "how is that win probability calculated"}, recent=[_lineup_result()])
+    assert r.numbers.startswith("How week 4's win probability is built")
+    cold = tools.run_tool(league, "explain", {"topic": "how is win probability calculated"})
+    assert not cold.take and "normal curve" in cold.numbers
+
+
+def test_a_value_question_after_a_lineup_still_asks_which_player(league):
+    r = tools.run_tool(league, "explain", {"topic": "how did you get that win-now value"}, recent=[_lineup_result()])
+    assert r.clarification is None or r.clarification.startswith("Whose number")
+
+
+def test_the_verdict_is_explained_from_the_database_with_no_earlier_answer(league):
+    r = tools.run_tool(league, "explain", {"topic": "how did you decide I should rebuild"})
+    assert r.numbers.startswith("How the contend, rebuild or unclear call was made") and r.take
+
+
+def test_a_bid_is_explained_for_the_player_named_or_the_one_just_shown(league):
+    shown = tools.run_tool(league, "waiver_targets", {"player": "Player fa"})
+    r = tools.run_tool(league, "explain", {"topic": "how did you size that bid"}, recent=[shown])
+    assert r.numbers.startswith("How the $") and "Player fa" in r.numbers
+    named = tools.run_tool(league, "explain", {"topic": "how did you size the bid for Player fa"})
+    assert named.numbers.startswith("How the $")
+
+
+def test_which_pick_is_a_question_when_several_are_slotted_and_the_year_settles_it(league):
+    rows = [{"season": 2027, "round": 1, "projected_slot": "1.05", "tier": "Mid", "fantasycalc_price": 3034.0,
+             "comparable_value": 2500.0, "comparable_players": ["A"], "advice": "SELL"},
+            {"season": 2027, "round": 2, "projected_slot": "2.05", "tier": "Mid", "fantasycalc_price": 1000.0,
+             "comparable_value": 1000.0, "comparable_players": ["B"], "advice": "HOLD"}]
+    shown = tools.ToolResult("pick_advice", data={"rows": rows})
+    ask = tools.run_tool(league, "explain", {"topic": "why is that a sell"}, recent=[shown])
+    assert ask.clarification == "Which pick: 2027 1.05, 2027 2.05?"
+    one = tools.run_tool(league, "explain", {"topic": "why is my 2027 1st a sell"}, recent=[shown])
+    assert one.numbers.startswith("How the call on the 2027 1.05 was made")
+
+
+def test_a_trade_or_lineup_question_with_nothing_shown_says_what_to_do_first(league):
+    trade = tools.run_tool(league, "explain", {"topic": "how did you calculate the net total"})
+    assert "Ask me about a trade first" in trade.clarification
+    lineup = tools.run_tool(league, "explain", {"topic": "how did you get my projected points"})
+    assert "Ask me who to start first" in lineup.clarification
+
+
+def test_a_term_asked_cold_is_a_definition_not_a_calculation(league):
+    for topic in ("how did you get the market value", "how is win probability worked out"):
+        r = tools.run_tool(league, "explain", {"topic": topic})
+        assert not r.take and r.clarification is None, topic

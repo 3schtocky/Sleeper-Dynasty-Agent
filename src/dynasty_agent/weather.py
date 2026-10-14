@@ -140,7 +140,7 @@ def parse_wind_mph(wind_speed_text: str | None) -> float | None:
 
 
 def _fetch_forecast_periods(lat: float, lon: float) -> list[dict]:
-    with httpx.Client(timeout=15.0, headers={"User-Agent": "dynasty-agent (github.com/3schtocky/Sleeper-Dynasty-AI-Agent)"}) as client:
+    with httpx.Client(timeout=15.0, headers={"User-Agent": "dynasty-agent (github.com/3schtocky/Sleeper-Dynasty-Agent)"}) as client:
         points = client.get(f"https://api.weather.gov/points/{lat},{lon}")
         points.raise_for_status()
         forecast_url = points.json()["properties"]["forecast"]

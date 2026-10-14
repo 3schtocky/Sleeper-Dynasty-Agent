@@ -142,7 +142,7 @@ A ranked prospect board for the next rookie draft, with a recommendation on any 
 
 ## Phase 5: talk to the agent (preview built on branch `phase5-chat-preview`, 2026-09-29)
 
-Goal: ask "should I trade Coleman and a 2028 2nd for a 2027 1st?" or "who do I start this week?" in plain English, answered by an open-source model running locally on the MacBook Air M4 (16GB), instead of typing `uv run` commands.
+Goal: ask "should I trade Coleman and a 2028 2nd for a 2027 1st?" or "who do I start this week?" in plain English, answered by an open-source model running locally on the MacBook Air M4 (16GB), instead of typing commands.
 
 ### Decisions confirmed with the user
 - Runtime: Ollama, chosen as the easiest to understand and build with (`ollama pull qwen3:4b`; `ollama run` to try the bare model by hand; a plain local HTTP API the existing `httpx` reaches, no new Python dependency).
@@ -182,7 +182,7 @@ Models live in `~/Open Source Models` (the user's choice, outside the repo; `~/.
 Design rules this surfaced, before any code: never ask the model for anything Python already knows (current week, the user's roster, the season), Python fills those in; and accept any reasonable argument format from the model (it wrote picks as "2027-1" in one run and "2027 1st" in the next), the tool layer normalizes.
 
 ### User experience target
-`git clone`, then `uv run dynasty-agent` with no arguments opens a first-run setup: checks Ollama and downloads the model (saying the size first), asks the Sleeper username and league, loads the data with progress (replacing today's five first-run commands), asks what matters to the user (contending, rebuilding, trades, waivers, rookies), offers the daily refresh, then opens the chat with a short brief tuned to those priorities. Before building it, the user will run a first-time install from GitHub by hand to find where today's onboarding breaks.
+`git clone`, then `dynasty-agent` with no arguments opens a first-run setup: checks Ollama and downloads the model (saying the size first), asks the Sleeper username and league, loads the data with progress (replacing today's five first-run commands), asks what matters to the user (contending, rebuilding, trades, waivers, rookies), offers the daily refresh, then opens the chat with a short brief tuned to those priorities. Before building it, the user will run a first-time install from GitHub by hand to find where today's onboarding breaks.
 
 ### Requirement: live model stats, bottom right (requested 2026-09-29)
 While talking to the agent, the user sees the model working, the way LM Studio and Ollama's own app show it: a status bar pinned to the bottom-right of the terminal.
@@ -243,6 +243,29 @@ After the preview (recorded, not built):
 - Re-derive calibration on this branch's blended projections before any win probability drops its draft label.
 - A one-line installer rewritten for Ollama (the old branch's LM Studio script has a `curl | bash` stdin bug, no `pipefail` and a PATH gap).
 - The first-run setup wizard, shaped by the user's clean-install test.
+
+### Conversation and explaining the math (branch `phase5-chat-explain`, 2026-09-29)
+The user tried the preview: it works but lacks conversation, and it can't say how it gets a number. A 4B model asked to explain methodology from memory would invent it, and the grounding check catches invented numbers, not invented reasoning. So Python writes the explanations and the model only retells them.
+
+Decisions confirmed with the user: step-by-step explanations with their own numbers; keep `qwen3:4b-instruct` and change its behavior (no fine-tuning); remember the last 3 answers. Built in phases with a stop after each: A player values and a glossary, B trades and lineup win probability, C FAAB bids, the verdict and pick advice.
+
+**Phase A (done).**
+- `explain.py`: `explain_player_value` builds the real chain (blended points per game, then position weight, age factor, situation factor, win-now, three-year) from the live constants in `metrics.py` and `blend.py`, never copies of them. Every chain is checked against `player_valuations` before it is returned; a mismatch raises `ExplanationMismatch` and nothing is shown. A glossary of 13 terms (win-now, 3yr, market value, situation score, FPPG, variance, win probability, arbitrage, discount rate, posture, age, taxi, FAAB) is written in Python, the age entry reading the live `AGE_CURVES`.
+- Output: Python prints the steps block, the model retells it in up to six sentences, and a fixed hint follows. A definition is Python's own text with no model take. The take may quote numbers from the last 3 answers, so "why?" can refer to them; an invented number is still dropped.
+- **A seventh tool did not work, and the numbers show it.** Offering `explain` to the model dropped its routing of the original 39 questions from 39/39 to 36/39 (an A/B run: 39/39 with the tool removed, 36/39 with it), and it still missed explain questions ("What is arbitrage?", a bare "Why?"). Three rewrites of the tool's description and the router prompt each left the same three original questions wrong. So the model never sees `explain`: `explain.detect` recognizes the question in Python (narrow on purpose: "How do I get Puka Nacua?", "What's a good FAAB bid for Justin Fields?" and all 39 bake-off questions are tested never to match) and `explain.find_player` reads the player's name out of the question. A phrasing it misses falls through to the six-tool router and gets an ordinary answer.
+- Memory: the router still sees each question alone (earlier answers made the model imitate them, and a line naming earlier tools let names leak into a new question in the A/B run). Python keeps the last 3 results for explanations, and the answer to "Whose number?" goes back to `explain`.
+- Found live: a 160-token cap cut a retelling mid-sentence (explain turns now get 420); "Why is his 3yr lower?" returned the definition instead of the player's chain (`wants_math` now counts why, where and explain); the model once wrote "x -1.03" (the prompt now forbids a minus the steps don't show).
+- Verified live on the real league: Trey Benson and Jonah Coleman chains, "why is his 3yr lower", "why does age matter for running backs", "what is arbitrage", and a trade followed by "why?".
+
+**Phases B and C (done, same day).** Every explanation is built from the result the user was shown (or the live database) and its last step is recomputed and must equal the number shown, or `ExplanationMismatch` is raised and nothing is displayed.
+- Lineup and win probability (`explain_lineup`): each starter's projected points with the injury and Vegas factors that moved them, the summed variance, the opponent's side, the gap, the combined spread, and the normal-curve step, with the independence and draft-heuristic limits stated. A bye or a borrowed variance is disclosed.
+- Trade (`explain_trade`): each pick's price (the nearest draft priced directly, a later one as base x (1 - 20%)^years, with the gap to FantasyCalc's own price), each side's market total, the net, the players-only win-now and three-year nets, the fit rule that applied to the user's posture, and the roster-shape note. Two scales are never added, and unpriced assets are named as counting 0.
+- FAAB bid (`explain_faab`): weekly pace, lineup gain against the best upgrade on the wire, the multiplier, and the bid from the unrounded product (a live test showed the model rounding it wrong when only the rounded bid was given).
+- Contend, rebuild or unclear (`explain_verdict`): the two percentiles against the other teams, the stated bands, and the confidence.
+- Pick buy, hold or sell (`explain_pick`): projected slot, FantasyCalc's tiered price, what that slot bought last year, the ratio and the bands. Which pick is a question when several are slotted.
+- "Why?" after an answer explains that answer (trade, lineup, bid, verdict, pick), and after a player explanation it explains the same player. Taxi and IR advice has no numbers to explain and is not covered.
+- Found live: the verdict step printed "82th"; "Why is that a sell?" was not recognized; both fixed and tested. The `valuate` command still prints "82th percentile" (unchanged, outside this work).
+- Verified live on the real league: a trade then "why?", a lineup then "how is that win probability calculated?", a bid, the verdict and a pick sale, each retold in plain language with every number in the steps.
 
 ### Stated limits
 - Sleeper's API is read-only: the agent recommends a lineup, bid, trade, or taxi move; the user makes it in the Sleeper app.
