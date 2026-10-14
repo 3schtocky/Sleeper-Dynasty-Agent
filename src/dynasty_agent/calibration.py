@@ -61,6 +61,11 @@ from dynasty_agent.metrics import (
     vegas_week_multiplier,
 )
 
+# The schedules file keeps the code a team played under (Oakland in 2018-2019),
+# while the stats files use the current one for every year. Found live: all 32
+# Raiders games of 2018-2019 failed to match any player stats.
+STATS_TEAM = {"OAK": "LV", "SD": "LAC", "STL": "LA"}
+
 # Fixed and documented, not left to chance: the random team_a/team_b
 # assignment is reproducible, so a re-run over the same seasons rebuilds the
 # same backtest_games rows.
@@ -83,7 +88,7 @@ def predicted_team_distribution(
     rows = conn.execute(
         "SELECT DISTINCT player_id, gsis_id FROM weekly_stats "
         "WHERE team = ? AND season = ? AND week = ? AND gsis_id IS NOT NULL",
-        (team, str(season), week),
+        (STATS_TEAM.get(team, team), str(season), week),
     ).fetchall()
 
     vegas_mult = vegas_week_multiplier(week_implied.get(team), season_avg_implied.get(team))

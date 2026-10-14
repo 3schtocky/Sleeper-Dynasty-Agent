@@ -134,3 +134,18 @@ def test_usable_rejects_a_missing_or_non_positive_slope():
     assert calibration.usable((0.0, 0.1)) is None
     assert calibration.usable((-0.3, 0.1)) is None
     assert calibration.usable((0.4, -0.02)) == (0.4, -0.02)
+
+
+def test_a_team_that_moved_is_matched_to_its_current_stats_code(world, tmp_path, monkeypatch):
+    """The schedule says OAK for 2018-2019; the stats files say LV for every year."""
+    games = tmp_path / "oak.parquet"
+    write_games(games, [(2025, 3, "OAK", "BUF", 30.0, 20.0)])
+    monkeypatch.setattr(nflverse, "ensure_games_cached", lambda force=False: games)
+    for week in range(1, 4):
+        add_stats(world, "lv1", "LV", 2025, week, 18.0)
+    mean, _, found = calibration.predicted_team_distribution(world, 2025, 3, "OAK", {}, {})
+    assert found == 1 and mean > 0
+    rows, considered = calibration.build_backtest_sample(world, 2025, 2025)
+    assert (len(rows), considered) == (1, 1)
+    assert {rows[0]["team_a"], rows[0]["team_b"]} == {"OAK", "BUF"}  # the game is still recorded under the schedule's code
+

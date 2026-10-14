@@ -547,7 +547,10 @@ def cmd_backfill_history(args: argparse.Namespace) -> None:
         else:
             print(nflverse.ingest_season(conn, season, scoring))
         print(f"  + {nfl_extra.ingest_injuries(conn, season)} real injury-report rows for {season}.")
-    print(f"\nNext: `dynasty-agent calibrate-matchup-model --start-season {args.start_season + 1} --end-season {end}`")
+    if args.start_season < end:
+        print(f"\nNext: `dynasty-agent calibrate-matchup-model --start-season {args.start_season + 1} --end-season {end}`")
+    else:
+        print("\nOne season is not enough to calibrate on: a season's projections need the one before it, and a fit needs at least a season to test.")
 
 
 def cmd_calibrate_matchup_model(args: argparse.Namespace) -> None:
@@ -564,7 +567,7 @@ def cmd_calibrate_matchup_model(args: argparse.Namespace) -> None:
     print(f"{'Metric':<10} {'Before':>9} {'After':>9}")
     print(f"{'Brier':<10} {r['brier_before']:>9.4f} {r['brier_after']:>9.4f}   (lower is better)")
     print(f"{'Log-loss':<10} {r['log_loss_before']:>9.4f} {r['log_loss_after']:>9.4f}   (lower is better)")
-    print(f"{'Accuracy':<10} {r['accuracy_before']:>9.1%} {r['accuracy_after']:>9.1%}   (who is favored; a correction cannot change it)")
+    print(f"{'Accuracy':<10} {r['accuracy_before']:>9.1%} {r['accuracy_after']:>9.1%}   (who is favored; moves little)")
     if r["platt_a"] < 1:
         print("\na below 1 means the raw heuristic was too sure of itself: its probabilities are pulled toward 50%.")
     print("Win probabilities in optimize-lineup, predict-matchup, digest, simulate-season and the chat now use it. "
