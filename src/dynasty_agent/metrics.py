@@ -463,13 +463,12 @@ def blended_variance(prior_values: list[float], prior_weight_games: float, curre
 
 # -- Matchup-model calibration math ---------------------------------------------
 #
-# Ported unchanged from the unmerged worktree-phase4-college-data branch
-# (commit e8fb28c), math and tests only. Nothing calls it yet: that branch's
-# backtest fitted it on whole NFL teams' real games, which may not transfer
-# to 8-starter fantasy lineups, and its backtest code doesn't run against
-# this branch's blended projections. Re-deriving the fit is recorded as
-# follow-up work in PLANNING.md; until then every win probability stays
-# labeled a draft heuristic.
+# Ported from the earlier worktree-phase4-college-data branch (commit e8fb28c),
+# then fitted by calibration.py on this branch's blended projections against
+# 2,127 real NFL games. The fit is a slope only (fit_intercept=False): a free
+# intercept makes the answer depend on which team is called A and can flip the
+# favorite. It was fitted on whole NFL teams' games, so applying it to
+# 8-starter fantasy lineups is an approximation; see PLANNING.md.
 #
 # Platt scaling: a real, standard technique for recalibrating a heuristic's
 # probability estimates against real outcomes without changing the
