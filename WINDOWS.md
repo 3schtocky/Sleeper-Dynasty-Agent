@@ -45,8 +45,8 @@ Close and reopen PowerShell afterward so it picks up the new PATH entry.
 ## 3. Clone and set up the project
 
 ```powershell
-git clone https://github.com/3schtocky/Sleeper-Dynasty-AI-Agent.git
-cd Sleeper-Dynasty-AI-Agent
+git clone https://github.com/3schtocky/Sleeper-Dynasty-Agent.git
+cd Sleeper-Dynasty-Agent
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -e ".[dev]"

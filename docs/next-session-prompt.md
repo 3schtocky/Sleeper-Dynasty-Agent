@@ -6,7 +6,7 @@ Open Terminal, `cd ~/Sleeper-Dynasty-AI-Agent`, run `claude`, and paste everythi
 
 ```
 I'm continuing my Sleeper Dynasty Agent project in ~/Sleeper-Dynasty-AI-Agent
-(GitHub: 3schtocky/Sleeper-Dynasty-AI-Agent, public backup 3schtocky/Sleeper-Dynasty-Agent).
+(GitHub: 3schtocky/Sleeper-Dynasty-Agent; the older Sleeper-Dynasty-AI-Agent repo is retired).
 
 Before anything else, read these, in this order:
 1. docs/phase5-chat-preview-plan.md  (the handoff from my last session, "Sleeper Agent 002")

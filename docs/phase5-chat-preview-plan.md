@@ -29,9 +29,9 @@ evaluation set and model comparison, the pinned bottom-right status bar, a local
 
 ## 2. Where things stand
 
-- **Repo**: github.com/3schtocky/Sleeper-Dynasty-AI-Agent, local at `~/Sleeper-Dynasty-AI-Agent`,
-  on `main` at `5ec74fa`. Public backup: github.com/3schtocky/Sleeper-Dynasty-Agent (remote
-  `backup`, not auto-synced: after `git push`, run `git push backup --all`).
+- **Repo**: github.com/3schtocky/Sleeper-Dynasty-Agent (remote `origin`), local at
+  `~/Sleeper-Dynasty-AI-Agent`. This file is a snapshot from when `main` was at `5ec74fa`; the
+  older Sleeper-Dynasty-AI-Agent repo is retired.
 - **Built and on main**: Phases 0-4 plus the Phase 3.5 audit. 118 tests pass
   (`pytest`). `refresh` runs daily at 06:00 via launchd.
 - **`PLANNING.md`** has the full Phase 5 plan (section "Phase 5: talk to the agent"), the model

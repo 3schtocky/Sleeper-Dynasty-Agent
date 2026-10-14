@@ -351,7 +351,7 @@ def fit_ridge(x: list[list[float]], y: list[float], ridge_lambda: float = RIDGE_
 
 
 def predict(weights: list[float], features: list[float]) -> float:
-    return weights[0] + sum(w * v for w, v in zip(weights[1:], features))
+    return weights[0] + sum(w * v for w, v in zip(weights[1:], features, strict=True))
 
 
 def _matrix(rows: list[dict], names: tuple[str, ...]) -> list[list[float]]:
@@ -366,14 +366,14 @@ def leave_one_class_out(rows: list[dict], names: tuple[str, ...]) -> dict:
         train = [r for r in rows if r["draft_class"] != held]
         test = [r for r in rows if r["draft_class"] == held]
         w = fit_ridge(_matrix(train, names), [r["target"] for r in train])
-        for r, feats in zip(test, _matrix(test, names)):
+        for r, feats in zip(test, _matrix(test, names), strict=True):
             p = predict(w, feats)
             preds.append(p)
             targets.append(r["target"])
             errors.append(abs(p - r["target"]))
     mean_t = sum(targets) / len(targets)
     ss_tot = sum((t - mean_t) ** 2 for t in targets)
-    ss_res = sum((t - p) ** 2 for t, p in zip(targets, preds))
+    ss_res = sum((t - p) ** 2 for t, p in zip(targets, preds, strict=True))
     return {"mae": sum(errors) / len(errors), "r2": 1 - ss_res / ss_tot if ss_tot else 0.0, "n": len(targets)}
 
 

@@ -138,7 +138,8 @@ class OllamaClient:
         names = {m.get("name") for m in response.json().get("models", [])}
         wanted = {self.model, f"{self.model}:latest"} if ":" not in self.model else {self.model}
         if not names & wanted:
-            raise LLMError(f"The model {self.model} isn't installed. Run `ollama pull {self.model}` (about 2.5 GB).")
+            size = " (about 2.5 GB)" if self.model == "qwen3:4b-instruct" else ""
+            raise LLMError(f"The model {self.model} isn't installed. Run `ollama pull {self.model}`{size}.")
 
     def warm(self) -> None:
         """Load the model into memory ahead of the first question: Ollama loads

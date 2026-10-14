@@ -37,8 +37,8 @@ It is built for **one specific league shape**: 12 teams, 1QB, full PPR, no TE pr
 ## Install
 
 ```
-git clone https://github.com/3schtocky/Sleeper-Dynasty-AI-Agent.git
-cd Sleeper-Dynasty-AI-Agent
+git clone https://github.com/3schtocky/Sleeper-Dynasty-Agent.git
+cd Sleeper-Dynasty-Agent
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
