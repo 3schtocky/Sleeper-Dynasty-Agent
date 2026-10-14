@@ -91,6 +91,7 @@ def test_fit_stores_a_row_and_the_newest_fit_is_the_one_in_use(world, monkeypatc
     monkeypatch.setattr(calibration, "build_backtest_sample", lambda conn, s, e: (rows, 40))
     first = calibration.fit_and_store_calibration(world, 2018, 2025)
     assert first["platt_a"] > 0 and first["sample_size"] == 40
+    assert first["platt_b"] == 0.0  # slope only, so the favorite can never change
     assert first["brier_after"] < first["brier_before"]  # the correction helps
     assert calibration.current_calibration(world) == (first["platt_a"], first["platt_b"])
     assert platt_scale(0.9, first["platt_a"], first["platt_b"]) == pytest.approx(0.5, abs=0.05)

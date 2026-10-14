@@ -563,11 +563,12 @@ def cmd_calibrate_matchup_model(args: argparse.Namespace) -> None:
 
     print(f"Calibrated the matchup win-probability model against {r['sample_size']} real NFL games "
           f"({r['start_season']}-{r['end_season']}; {r['games_considered'] - r['sample_size']} skipped for lack of player stats).")
-    print(f"Fitted correction: sigmoid(a x logit(raw) + b) with a = {r['platt_a']:.3f}, b = {r['platt_b']:+.3f}\n")
+    shift = f", b = {r['platt_b']:+.3f}" if r["platt_b"] else ""
+    print(f"Fitted correction: sigmoid(a x logit(raw)) with a = {r['platt_a']:.3f}{shift}\n")
     print(f"{'Metric':<10} {'Before':>9} {'After':>9}")
     print(f"{'Brier':<10} {r['brier_before']:>9.4f} {r['brier_after']:>9.4f}   (lower is better)")
     print(f"{'Log-loss':<10} {r['log_loss_before']:>9.4f} {r['log_loss_after']:>9.4f}   (lower is better)")
-    print(f"{'Accuracy':<10} {r['accuracy_before']:>9.1%} {r['accuracy_after']:>9.1%}   (who is favored; moves little)")
+    print(f"{'Accuracy':<10} {r['accuracy_before']:>9.1%} {r['accuracy_after']:>9.1%}   (who is favored; a slope alone never changes it)")
     if r["platt_a"] < 1:
         print("\na below 1 means the raw heuristic was too sure of itself: its probabilities are pulled toward 50%.")
     print("Win probabilities in optimize-lineup, predict-matchup, digest, simulate-season and the chat now use it. "

@@ -304,10 +304,11 @@ def explain_lineup(r: dict) -> Explanation:
         again = metrics.platt_scale(prob, a, b)
         if abs(again - calibrated) > TOLERANCE:
             raise ExplanationMismatch("I couldn't reproduce the calibrated win probability shown, so I won't walk you through it.")
+        shift = f" + {b:.3f}" if b > 0 else f" - {-b:.3f}" if b < 0 else ""
         steps.append(Step(
-            "Calibration", f"sigmoid(a x ln(p / (1 - p)) + b) with p = {prob:.1%}, a = {a:.3f}, b = {b:+.3f}", f"{calibrated:.1%}",
-            "when the raw numbers were tested against past NFL games they were too sure of themselves; a below 1 pulls "
-            "them toward 50%, and b nudges the whole scale up or down",
+            "Calibration", f"sigmoid({a:.3f} x ln(p / (1 - p)){shift}) with p = {prob:.1%}", f"{calibrated:.1%}",
+            "when the raw numbers were tested against past NFL games they were too sure of themselves; a slope below 1 "
+            "pulls them toward 50% without ever changing who is favored" + (", and the shift moves the whole scale" if b else ""),
         ))
     if r.get("differs_from_points_max") and r.get("swaps_from_points_max"):
         swaps = "; ".join(f"{s['starts']} over {s['over']}" for s in r["swaps_from_points_max"])
@@ -558,10 +559,10 @@ GLOSSARY: dict[str, tuple[tuple[str, ...], str]] = {
         ("calibrated", "calibrate", "platt", "overconfident", "overconfidence"),
         "Calibration checks the win probability against what really happened. The tool replays past NFL games, "
         "records the raw win probability for each side, and compares it with who actually won. The raw number was "
-        "too sure of itself: a team given 90% did not win 90% of the time. A two-number correction (a slope that "
-        "pulls probabilities toward 50% and a small shift) is fitted to the results and applied to what you see. It "
-        "fixes confidence only: it does not change who is favored, and it was fitted on NFL team games rather than "
-        "fantasy lineups.",
+        "too sure of itself: a team given 90% did not win 90% of the time. A one-number correction (a slope below 1 "
+        "that pulls every probability toward 50%) is fitted to the results and applied to what you see. It fixes "
+        "confidence only: it never changes who is favored, and it was fitted on NFL team games rather than fantasy "
+        "lineups.",
     ),
     "arbitrage": (
         ("arbitrage",),

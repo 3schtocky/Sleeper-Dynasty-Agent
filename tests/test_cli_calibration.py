@@ -97,3 +97,11 @@ def test_the_three_commands_are_registered(monkeypatch, capsys):
     out = capsys.readouterr().out
     for name in ("backfill-history", "calibrate-matchup-model", "simulate-season"):
         assert name in out
+
+
+def test_a_slope_only_fit_prints_just_the_slope(db, monkeypatch, capsys):
+    monkeypatch.setattr(calibration, "fit_and_store_calibration", lambda conn, s, e: {**SUMMARY, "platt_b": 0.0})
+    cli.cmd_calibrate_matchup_model(argparse.Namespace(start_season=2018, end_season=2025))
+    out = capsys.readouterr().out
+    assert "sigmoid(a x logit(raw)) with a = 0.310\n" in out and "b =" not in out
+

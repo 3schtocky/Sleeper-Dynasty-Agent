@@ -509,7 +509,7 @@ def platt_scale(raw_prob: float, a: float, b: float) -> float:
 
 
 def fit_platt_scaling(
-    pairs: list[tuple[float, float]], iterations: int = 500, learning_rate: float = 0.05
+    pairs: list[tuple[float, float]], iterations: int = 500, learning_rate: float = 0.05, fit_intercept: bool = True
 ) -> tuple[float, float]:
     """Fits (a, b) minimizing log-loss between platt_scale(raw_prob, a, b)
     and real outcomes, via batch gradient descent. pairs are
@@ -517,7 +517,13 @@ def fit_platt_scaling(
     a real tie). Starts at (1.0, 0.0), the identity mapping, so an
     already-reasonable heuristic converges fast rather than starting from
     "always predict 0.5" at (0.0, 0.0). Returns (1.0, 0.0) unchanged for an
-    empty sample, never divides by zero."""
+    empty sample, never divides by zero.
+
+    fit_intercept=False fits the slope alone and returns b = 0.0. That is the
+    only correction that treats the two sides of a game alike: with b != 0,
+    platt_scale(1 - p) != 1 - platt_scale(p), so the answer would change with
+    which team happens to be called A, and a raw underdog near 50% can come
+    out a favorite."""
     if not pairs:
         return 1.0, 0.0
 
@@ -534,7 +540,8 @@ def fit_platt_scaling(
             grad_a += error * x
             grad_b += error
         a -= learning_rate * grad_a / n
-        b -= learning_rate * grad_b / n
+        if fit_intercept:
+            b -= learning_rate * grad_b / n
     return a, b
 
 

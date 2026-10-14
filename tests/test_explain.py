@@ -389,7 +389,8 @@ def test_a_calibrated_win_probability_gets_its_own_step_that_reproduces_the_numb
     assert [s.label for s in e.steps][-2:] == ["Win probability", "Calibration"]
     step = e.steps[-1]
     assert step.value == f"{r['recommended_win_probability_calibrated']:.1%}"
-    assert f"p = {r['recommended_win_probability']:.1%}" in step.formula and "a = 0.300" in step.formula and "b = -0.010" in step.formula
+    assert f"p = {r['recommended_win_probability']:.1%}" in step.formula
+    assert step.formula.startswith("sigmoid(0.300 x ln(p / (1 - p)) - 0.010)")  # a fit stored with a shift still shows it
     assert any("corrected" in line and "fantasy lineups" in line for line in e.limits)
     assert not any("not been calibrated" in line for line in e.limits)
 
@@ -411,3 +412,13 @@ def test_calibration_is_a_glossary_term_and_win_probability_no_longer_claims_it_
     assert term == "calibration" and "fantasy lineups" in definition
     assert explain.lookup_glossary("overconfident")[0] == "calibration"
     assert "has not been checked" not in explain.lookup_glossary("what is win probability")[1]
+
+
+def test_a_slope_only_fit_shows_no_shift():
+    r = lineup_result()
+    r.update(recommended_win_probability_calibrated=metrics.platt_scale(r["recommended_win_probability"], 0.36, 0.0),
+             calibration_params=(0.36, 0.0))
+    step = explain.explain_lineup(r).steps[-1]
+    assert step.formula.startswith("sigmoid(0.360 x ln(p / (1 - p))) with p =")
+    assert "moves the whole scale" not in step.why and "ever changing who is favored" in step.why
+

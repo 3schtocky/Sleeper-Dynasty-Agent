@@ -25,6 +25,13 @@ home/away is meaningless. Fix: which real side plays "team A" is picked by
 `random.Random(seed)`, a fixed, documented seed, so any home-field effect is
 absorbed as noise across both classes instead of baked into a bias.
 
+**Slope only, no intercept:** the correction is sigmoid(a * logit(raw)), with
+b fixed at 0. A free intercept made the answer depend on which team is called
+A and, on the real 2,127-game backtest, flipped the favorite in 101 games
+(b came out +0.08, about noise) while improving Brier score by 0.0003. With
+b = 0, swapping the two teams gives 1 minus the same answer, and the favorite
+never changes: this fixes how sure the heuristic is, not who it picks.
+
 **Stated limitations, not hidden:**
 - This corrects the heuristic's overall over/under-confidence. It adds no
   new information; home-field advantage stays unmodeled.
@@ -212,7 +219,7 @@ def fit_and_store_calibration(conn: sqlite3.Connection, start_season: int, end_s
             f"`dynasty-agent backfill-history --start-season {start_season - 1} --end-season {end_season}` first."
         )
 
-    platt_a, platt_b = fit_platt_scaling(pairs)
+    platt_a, platt_b = fit_platt_scaling(pairs, fit_intercept=False)
     if platt_a <= 0:
         print(
             f"Warning: fitted calibration has a={platt_a:.4f} <= 0, so the raw heuristic's ranking is not preserved by "
