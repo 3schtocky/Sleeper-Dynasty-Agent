@@ -59,7 +59,7 @@ def cmd_init(args: argparse.Namespace) -> None:
     )
     print(f"Wrote {config.ENV_PATH}")
     print(f"League: {league['name']} ({league['league_id']}, {league.get('season') or season} season)")
-    print("Next: `dynasty-agent sync`")
+    print("Next: `dynasty-agent sync`, then the rest of \"First run on a new machine\" in README.md (or `dynasty-agent refresh` once those are done).")
 
 
 def cmd_sync(args: argparse.Namespace) -> None:

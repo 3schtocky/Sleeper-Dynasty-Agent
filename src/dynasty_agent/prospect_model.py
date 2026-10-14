@@ -37,6 +37,7 @@ from datetime import date
 
 import duckdb
 
+from dynasty_agent.errors import AgentError
 from dynasty_agent import nflverse
 from dynasty_agent.college import is_power_conference
 from dynasty_agent.db import utcnow
@@ -383,6 +384,13 @@ def fit_and_store(conn: sqlite3.Connection, scoring_settings: dict, last_complet
     full report."""
     classes = training_classes(last_complete_season)
     rows, coverage = training_rows(conn, scoring_settings, classes)
+    if not rows:
+        raise AgentError(
+            f"No training data for the {classes.start}-{classes.stop - 1} draft classes ({coverage['drafted']} drafted, "
+            f"{coverage['no_college_link']} with no college stats). On a new machine run `dynasty-agent ingest-college "
+            f"--season 2008 --through <current season>` and `dynasty-agent ingest-nflverse --season <year>` for each "
+            f"NFL season from {classes.start}, then `dynasty-agent fit-prospect-model` (README, first run)."
+        )
     report = {"coverage": coverage, "classes": [classes.start, classes.stop - 1], "variants": {}}
     for variant, names in VARIANTS:
         rows_v = [r for r in rows if all(r["features"][n] is not None for n in names)]
