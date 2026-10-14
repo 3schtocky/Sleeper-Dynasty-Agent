@@ -25,6 +25,7 @@ from dynasty_agent.matchup import (
     team_week_implied_points,
     teams_playing,
 )
+from dynasty_agent.calibration import current_calibration, usable
 from dynasty_agent.metrics import (
     FLEX_SLOT_ELIGIBILITY,
     best_lineup_total,
@@ -32,6 +33,7 @@ from dynasty_agent.metrics import (
     injury_adjusted_variance,
     matchup_win_probability,
     percentile_rank,
+    platt_scale,
     sample_mean_variance,
     starting_slot_counts,
     vegas_week_multiplier,
@@ -298,7 +300,14 @@ def best_points_lineup(projections: dict[str, dict], slot_counts: dict[str, int]
     )
 
 
-def optimize_lineup(conn: sqlite3.Connection, stats_season: int, vegas_season: int, week: int, my_roster_id: int) -> dict:
+def optimize_lineup(
+    conn: sqlite3.Connection,
+    stats_season: int,
+    vegas_season: int,
+    week: int,
+    my_roster_id: int,
+    calibration_params: tuple[float, float] | None = None,
+) -> dict:
     """The starting lineup, out of everyone eligible on my roster, that
     maximizes win probability against my actual Sleeper opponent this
     week, not raw projected points. Every valid lineup respecting this
@@ -316,7 +325,18 @@ def optimize_lineup(conn: sqlite3.Connection, stats_season: int, vegas_season: i
     or set around a bye), their best projected lineup from their roster
     stands in, and opponent_source says so. With no opponent at all there
     is no win probability (None): the lineup is simply the most points,
-    never a win probability against an opponent scoring 0."""
+    never a win probability against an opponent scoring 0.
+
+    The win probability above is the raw heuristic's, and the heuristic is
+    overconfident (see calibration.py). calibration_params is the fitted
+    (platt_a, platt_b); None looks up the latest stored fit, so the CLI, the
+    digest and the chat all get it without being passed anything, and with
+    no fit stored the result is exactly the raw one. The search keeps
+    comparing raw probabilities (cheap, and thousands of lineups): Platt
+    scaling with a > 0 is strictly increasing, so it can never change which
+    lineup ranks first, and the correction is applied once, to the winner.
+    A stored fit with a <= 0 would break that ordering, so it is ignored
+    here (calibration.fit_and_store_calibration warned when it was stored)."""
     if week not in REGULAR_AND_PLAYOFF_WEEKS:
         raise ValueError(f"Week {week} isn't an NFL week; weeks run 1 through 18.")
     league_row = conn.execute("SELECT roster_positions_json FROM league ORDER BY fetched_at DESC LIMIT 1").fetchone()
@@ -382,6 +402,11 @@ def optimize_lineup(conn: sqlite3.Connection, stats_season: int, vegas_season: i
         if points_key is None or pkey > points_key:
             points_key, points_best = pkey, assignment
 
+    calibration_params = usable(current_calibration(conn) if calibration_params is None else calibration_params)
+    best_prob_calibrated = (
+        platt_scale(best_prob, *calibration_params) if calibration_params and best_prob is not None else None
+    )
+
     best_ids = [pid for _, pid in best]
     points_ids = [pid for _, pid in points_best]
     slot_of = {pid: slot for slot, pid in best}
@@ -405,6 +430,8 @@ def optimize_lineup(conn: sqlite3.Connection, stats_season: int, vegas_season: i
         "recommended_lineup": [my_projections[pid] for pid in best_ids],
         "recommended_slots": [slot for slot, _ in best],
         "recommended_win_probability": best_prob,
+        "recommended_win_probability_calibrated": best_prob_calibrated,
+        "calibration_params": calibration_params,
         "points_max_lineup": [my_projections[pid] for pid in points_ids],
         "points_max_total": points_key[1] if points_key else None,
         "differs_from_points_max": set(best_ids) != set(points_ids),

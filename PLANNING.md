@@ -271,6 +271,66 @@ Decisions confirmed with the user: step-by-step explanations with their own numb
 - Sleeper's API is read-only: the agent recommends a lineup, bid, trade, or taxi move; the user makes it in the Sleeper app.
 - A small model will sometimes misroute; the grounding check and eval set measure and contain that, not claim it never happens.
 
+## Win-probability calibration and season simulation (branch `port-calibration`, 2026-10-14)
+
+Ported from `worktree-phase4-college-data`, an earlier session's Phases 4-7 (Sept 2-3). A straight merge conflicted in 13 files and both sides had built migrations 0004-0007 with different contents, so only the two pieces still worth having were brought over by hand and rebuilt on this branch's blended projections. Dropped on purpose: the earlier Phase 4 recruiting data (this branch has the ESPN prospect model), the player id crosswalk, and the `install.sh`/`install.ps1` installers (built on uv and LM Studio, neither used now). The old branch is tagged `archive/worktree-phase4-college-data` and deleted once the port merges.
+
+**Why:** the chat, `optimize-lineup` and `digest` all quoted a raw win probability that had never been checked. Checked against 2,127 real games it was badly overconfident.
+
+### Decisions
+- **Slope only, no intercept.** The first fit came out `a = 0.361, b = +0.079`. Two things were wrong with it, found only by looking at the real lineup: it turned a 46.7% raw underdog into a 50.8% favorite, and it flipped the favorite in 101 of 2,127 backtest games. A correction for "my team vs theirs" must give the complement when the labels swap and must never change who is favored; both need `b = 0`. The slope-only fit costs 0.0003 Brier. Converged (500 and 50,000 iterations agree).
+- **No leakage.** The earlier branch projected each backtested game from last season only. This branch's projections now blend in the current season, which would let a backtested week see its own result. `blend.player_distribution` and `weekly_values` gained `before_week`; the backtest projects week W from last season plus this season's weeks before W. The default is unchanged for every live caller. A test fails if the guard is removed.
+- **Each simulated team fields its best healthy lineup every week** (`weekly.best_points_lineup` over starters and bench, taxi and IR excluded). The earlier branch assumed today's starters hold, which counts a starter on a bye as zero.
+- **Raw and calibrated are always shown together.** Before a fit exists the raw number carries a note saying so. A stored fit with `a <= 0` is never applied (`calibration.usable`).
+- **Injuries stay out of `nflverse.FILES`.** `ingest_season(force=True)` loops over that dict, so an in-season refresh would re-download injury files it never reads.
+- **No `games_source` change in `matchup.py`.** This branch already reads the schedule from a local cached copy (`nflverse.ensure_games_cached`), which is the problem the earlier branch's change solved.
+- **No seventh chat tool.** Calibration questions go through `explain.detect` and the glossary, so routing stays 39 of 39.
+
+### Build order
+1. [x] Migration `0009_calibration.sql`: `nfl_injuries`, `backtest_games`, `calibration_params` (renumbered; the earlier branch's 0006 and 0007).
+2. [x] `nfl_extra.py`: real per-week injury reports from nflverse's `injuries` release.
+3. [x] Old-format depth charts: already handled on this branch (`_derive_week_numbered_depth_chart`), nothing to port. Checked on real 2018 and 2023 files.
+4. [x] `matchup.predict_matchup(calibration_params=)` returns calibrated values beside the raw ones.
+5. [x] `calibration.py`: `predicted_team_distribution`, `build_backtest_sample`, `fit_and_store_calibration`, `current_calibration`, `usable`. Seeded team A/B coin flip so home field cannot leak into the correction.
+6. [x] `weekly.optimize_lineup`: looks up the stored fit itself, so the CLI, digest and chat need no call-site edits. The search ranks raw probabilities (a strictly increasing correction cannot reorder lineups) and the correction is applied once, to the winner.
+7. [x] Display: `formatters.win_probability_lines`, `predict-matchup`, the digest footer.
+8. [x] Chat: the lineup tool quotes the calibrated number with `win_probability_raw`; `explain_lineup` has a Calibration step that recomputes the number and refuses to explain one it cannot reproduce; `calibration` is a glossary term; the caveat is true in both states.
+9. [x] `simulate.py` and the commands `backfill-history`, `calibrate-matchup-model`, `simulate-season`.
+10. [x] Docs (this section, README, CLAUDE.md).
+
+### Real bugs found by running it live
+- **Silent skips:** the schedule file calls the Raiders `OAK` in 2018-2019 while the stats files say `LV` for every year, so all 32 Raiders games failed to match any player stats. Found because the fit reported its skipped count. Fixed with a `STATS_TEAM` map (OAK, SD, STL) and a test.
+- **The intercept** described under Decisions: invisible in the aggregate scores (Brier and log-loss both improved), obvious on one real lineup.
+- **First-run crash and silent weak fits** (found earlier by the clean-clone test): the prospect fit now fails with a message naming the ingest commands, and warns below 80% college coverage.
+
+### Verified live
+Run first on a scratch copy of the real database, then on the real one (backed up first to `~/Sleeper-Dynasty-Backups/`). `backfill-history` took 4 s for 2017 and 19 s for 2018-2023 (about 150 MB of downloads, 20 MB of play-by-play per season; 2017, 2024 and 2025 were skipped as already present). `calibrate-matchup-model` takes about 35 s.
+- **The fit:** 2,127 real regular-season games, 2018-2025, none skipped. `a = 0.362, b = 0`. Brier 0.2434 to 0.2223, log-loss 0.7344 to 0.6365, accuracy 63.0% unchanged. The earlier branch found `a = 0.26` on 3,403 games from 2012: the same finding.
+- **It works where it matters.** Favorites by the raw heuristic's stated probability, against how often they actually won:
+
+| raw said | games | actually won | corrected said |
+|---|---|---|---|
+| 50-60% | 390 | 48.2% | 51.8% |
+| 60-70% | 382 | 54.6% | 55.7% |
+| 70-80% | 401 | 65.1% | 59.8% |
+| 80-90% | 451 | 65.3% | 65.3% |
+| 90-99% | 413 | 74.8% | 74.9% |
+| 99-100% | 90 | 85.6% | 89.2% |
+
+  The 70-80% bucket is the one place it under-corrects (59.8% said, 65.1% won), consistent with a single slope being a simple model.
+- **Real lineup, week 6:** raw 46.7% to 48.8%. `predict-matchup` with the two teams' labels swapped gives 39.2% and 60.8%, exact complements.
+- **Simulation:** 10,000 runs over 54 real remaining matchups in 7 s. Playoff odds sum to 6.0 (six spots) and average final wins to 84.2 (30 banked plus 54 games); the same seed repeats exactly.
+- **Chat:** `chat-eval` stays 39 of 39. A live session quoted the calibrated number with the raw one beside it, showed the true caveat, and its explanation reproduced the number.
+- **Tests:** 498 (from 444 on `main`).
+
+### Stated limits
+- Fitted on NFL team games with a roster rebuilt from who actually played that week (not a true pre-game depth chart), then applied to fantasy lineups. Read the corrected number as right in direction and rough in size.
+- Home-field advantage is still unmodeled; the seeded coin flip only keeps it out of the correction.
+- Backtest rookies are projected from their games so far only (there is no prospect-model projection for a past class).
+- Simulation: rosters hold as they are today (no trades, pickups or later injuries), every team is assumed to set its best lineup, the standings tiebreak is points scored so far, and a simulated game never ties. Every team's odds are slightly flattered.
+- A single slope under-corrects the 70-80% range a little (table above).
+- Refit after each season (`backfill-history` then `calibrate-matchup-model`). The fit is not part of `refresh`.
+
 ## Staying current in season
 
 Found by asking "will this stay up to date?": it didn't. Nothing ran on its own, the 2026 season's stats sat un-ingested three weeks in, and ingesting them would have switched every value from 17 games of 2025 to 3 noisy games of 2026 in one step.
@@ -281,20 +341,20 @@ Found by asking "will this stay up to date?": it didn't. Nothing ran on its own,
 - [x] **Real bug found on the way**: `ingest-nflverse` crashed for every season before 2025. nflverse's depth chart format changed in 2025 (dated snapshots, `pos_abb`); older seasons are week-numbered (`club_code`, `depth_team`). Both handled now, 2024 verified.
 - [x] **Found live, reported to the user**: Jonah Coleman is on IR in Sleeper as of week 4.
 
-## Out-of-band: ad hoc matchup prediction — DRAFT
+## Out-of-band: ad hoc matchup prediction
 
 Not part of the phase plan, added on request: `dynasty-agent predict-matchup` (`src/dynasty_agent/matchup.py`) estimates win probability between any two arbitrary rosters, not necessarily this league or even a dynasty league. Grew out of manually answering a one-off "who wins this weekend" question by hand.
 
-**Status: draft, explicitly.** This is the first pass, not the finished thing. Marked as such in the module docstring, the CLI help text, the CLI's own output every time it runs, and the README, on purpose, so "draft" stays visible wherever someone actually runs into it, not just here.
+**Status: a heuristic, now calibrated.** Written as a first draft and labeled that way everywhere it ran. Its raw win probability has since been tested against real outcomes and corrected (see "Win-probability calibration and season simulation" below), so the "draft" label is gone and the output says whether the number is calibrated. The projections under it are still a heuristic.
 
-**Planned next**, once there's a real dataset to build against: a proper prediction mode, calibrated against actual game outcomes rather than the current uncalibrated normal-CDF heuristic, and a trade bot built on top of that prediction mode, presumably using it to source or evaluate trade targets automatically rather than requiring a manually specified `dynasty-agent trade` call. Neither is scoped yet, no open questions or build order below, that comes when work on it actually starts.
+**Planned next**: a trade bot built on top of the calibrated prediction, presumably using it to source or evaluate trade targets automatically rather than requiring a manually specified `dynasty-agent trade` call. Not scoped yet, no open questions or build order, that comes when work on it actually starts.
 
-Explicitly a heuristic, not a fitted model:
+A heuristic underneath, not a fitted model (only its final win probability is calibrated):
 - Each player's mean and *sample* variance (Bessel's correction: divide by n-1, not n) come from their real weekly `fantasy_points` in a completed nflverse season, undefined (`None`, not a silently-wrong 0.0) for fewer than 2 games.
 - The mean gets discounted by current injury status (`metrics.INJURY_MEAN_MULTIPLIER`); variance gets widened for Questionable/Doubtful (closer to bimodal, full workload or scratched, than a healthy player's normal swing) and collapsed for Out/IR/Suspended (`metrics.INJURY_VARIANCE_MULTIPLIER`). Round, labeled numbers, not fitted from outcomes.
 - The mean also gets scaled by a real, specific week's Vegas-implied team total versus that team's own season norm (`metrics.vegas_week_multiplier`), sourced from nflverse's free, unauthenticated schedules file (`spread_line`/`total_line`), not a paid odds API and not a hardcoded per-team bias. Neutral (1.0) when there's no line yet or no season-baseline yet (week 1).
 - Win probability is the normal CDF of the projected margin over its combined standard deviation, the same idea as Vegas spread-to-moneyline conversion, simplified to two independent team totals.
-- The independence assumption (players' scores don't correlate with their teammates') is real and stated, not hidden. Nothing here has been checked against actual game outcomes, this project has no historical win/loss dataset to check it against.
+- The independence assumption (players' scores don't correlate with their teammates') is real and stated, not hidden. The resulting win probability was first checked against actual game outcomes in the calibration work below, and found badly overconfident.
 
 **Real bugs found and fixed while building this, not just theoretical caveats:**
 - Population variance (divide by n) instead of sample variance (divide by n-1) understated variance, worst for thin-sample players, exactly where overconfidence matters most. Fixed via `metrics.sample_mean_variance`.

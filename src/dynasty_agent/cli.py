@@ -7,7 +7,7 @@ import json
 import sys
 from datetime import datetime
 
-from dynasty_agent import blend, college, config, context, formatters, market, matchup, nflverse, picks, prospect_model, prospects, refresh, schedule, sleeper, taxi, valuation, weather, weekly
+from dynasty_agent import blend, calibration, college, config, context, formatters, market, matchup, nfl_extra, nflverse, picks, prospect_model, prospects, refresh, schedule, simulate, sleeper, taxi, valuation, weather, weekly
 from dynasty_agent.db import get_db
 from dynasty_agent.errors import AgentError
 from dynasty_agent.sleeper import SleeperClient
@@ -422,14 +422,17 @@ def cmd_predict_matchup(args: argparse.Namespace) -> None:
     vegas_season = context.vegas_season(conn, args.vegas_season)
 
     try:
-        result = matchup.predict_matchup(conn, season, vegas_season, args.week, args.team_a or [], args.team_b or [])
+        result = matchup.predict_matchup(
+            conn, season, vegas_season, args.week, args.team_a or [], args.team_b or [],
+            calibration_params=calibration.usable(calibration.current_calibration(conn)),
+        )
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         raise SystemExit(1)
 
     print(
         f"Matchup prediction, {season} season FPPG basis, week {args.week} of the {vegas_season} season. "
-        f"DRAFT MODEL, a heuristic, not a fitted or calibrated prediction, see matchup.py and PLANNING.md."
+        f"A heuristic, see matchup.py and PLANNING.md."
     )
     if not result["week_has_vegas_data"]:
         print(f"No Vegas lines published yet for {vegas_season} week {args.week}. Running on season averages only, no week adjustment.")
@@ -461,8 +464,14 @@ def cmd_predict_matchup(args: argparse.Namespace) -> None:
     print_side("Team B", result["team_b"])
 
     print(f"Projected margin (A - B): {result['mean_diff']:+.1f}, combined std dev: {result['std_diff']:.1f}")
-    print(f"Team A win probability: {result['win_probability_a']:.1%}")
-    print(f"Team B win probability: {result['win_probability_b']:.1%}")
+    if result["win_probability_a_calibrated"] is None:
+        print(f"Team A win probability: {result['win_probability_a']:.1%}")
+        print(f"Team B win probability: {result['win_probability_b']:.1%}")
+        print("(raw heuristic, not yet calibrated against real games: run `dynasty-agent calibrate-matchup-model`)")
+    else:
+        print(f"Team A win probability: {result['win_probability_a_calibrated']:.1%} (raw heuristic {result['win_probability_a']:.1%})")
+        print(f"Team B win probability: {result['win_probability_b_calibrated']:.1%} (raw heuristic {result['win_probability_b']:.1%})")
+        print("Raw numbers corrected for the overconfidence found when the heuristic was tested on past games.")
 
 
 def cmd_optimize_lineup(args: argparse.Namespace) -> None:
@@ -520,6 +529,93 @@ def cmd_digest(args: argparse.Namespace) -> None:
             if w["status"] == "ok" and w["flag"]:
                 winds[p["player_id"]] = f"  WIND {w['wind_mph']:.0f} mph at {w['stadium']}"
     print(formatters.format_digest(lineup, targets, winds, stats_season, vegas_season, sync_note))
+
+
+def cmd_backfill_history(args: argparse.Namespace) -> None:
+    """The data calibrate-matchup-model needs: weekly stats in the database
+    for every season in the range (a season's projections use the one before
+    it) and the real injury reports. Seasons already in the database are
+    skipped, --force redoes them."""
+    context.require_config()
+    conn = get_db()
+    scoring = context.scoring_settings(conn)
+    end = args.end_season if args.end_season is not None else context.latest_complete_season(conn)
+    have = {int(r[0]) for r in conn.execute("SELECT DISTINCT season FROM weekly_stats")}
+    for season in range(args.start_season, end + 1):
+        if season in have and not args.force:
+            print(f"{season}: weekly stats already in the database (--force to redo).")
+        else:
+            print(nflverse.ingest_season(conn, season, scoring))
+        print(f"  + {nfl_extra.ingest_injuries(conn, season)} real injury-report rows for {season}.")
+    if args.start_season < end:
+        print(f"\nNext: `dynasty-agent calibrate-matchup-model --start-season {args.start_season + 1} --end-season {end}`")
+    else:
+        print("\nOne season is not enough to calibrate on: a season's projections need the one before it, and a fit needs at least a season to test.")
+
+
+def cmd_calibrate_matchup_model(args: argparse.Namespace) -> None:
+    conn = get_db()
+    end = args.end_season if args.end_season is not None else context.latest_complete_season(conn)
+    try:
+        r = calibration.fit_and_store_calibration(conn, args.start_season, end)
+    except ValueError as e:
+        raise AgentError(str(e)) from None
+
+    print(f"Calibrated the matchup win-probability model against {r['sample_size']} real NFL games "
+          f"({r['start_season']}-{r['end_season']}; {r['games_considered'] - r['sample_size']} skipped for lack of player stats).")
+    shift = f", b = {r['platt_b']:+.3f}" if r["platt_b"] else ""
+    print(f"Fitted correction: sigmoid(a x logit(raw)) with a = {r['platt_a']:.3f}{shift}\n")
+    print(f"{'Metric':<10} {'Before':>9} {'After':>9}")
+    print(f"{'Brier':<10} {r['brier_before']:>9.4f} {r['brier_after']:>9.4f}   (lower is better)")
+    print(f"{'Log-loss':<10} {r['log_loss_before']:>9.4f} {r['log_loss_after']:>9.4f}   (lower is better)")
+    print(f"{'Accuracy':<10} {r['accuracy_before']:>9.1%} {r['accuracy_after']:>9.1%}   (who is favored; a slope alone never changes it)")
+    if r["platt_a"] < 1:
+        print("\na below 1 means the raw heuristic was too sure of itself: its probabilities are pulled toward 50%.")
+    print("Win probabilities in optimize-lineup, predict-matchup, digest, simulate-season and the chat now use it. "
+          "Refit after a new season is ingested.")
+
+
+def cmd_simulate_season(args: argparse.Namespace) -> None:
+    context.require_config()
+    conn = get_db()
+    stats_season = context.stats_season(conn, args.season)
+    vegas_season = context.vegas_season(conn, args.vegas_season)
+    from_week = context.current_week(conn)
+    playoff_week_start = json.loads(
+        conn.execute("SELECT settings_json FROM league ORDER BY fetched_at DESC LIMIT 1").fetchone()["settings_json"]
+    ).get("playoff_week_start", 15)
+    notes = {n for n in (weekly.sync_matchups_or_note(conn, week) for week in range(from_week, playoff_week_start)) if n}
+    for note in sorted(notes):
+        print(f"Note: {note}")
+
+    try:
+        result = simulate.simulate_season(
+            conn, stats_season, vegas_season, from_week, n_simulations=args.simulations, seed=args.seed)
+    except ValueError as e:
+        raise AgentError(str(e)) from None
+
+    print(
+        f"Season simulation, {result['n_simulations']} runs, from week {result['from_week']} through "
+        f"{result['playoff_week_start'] - 1} ({result['real_matchups_simulated']} real remaining matchups), "
+        f"top {result['playoff_teams']} make the playoffs."
+    )
+    if result["calibration_used"]:
+        print("Win probabilities are calibrated (see calibrate-matchup-model).")
+    else:
+        print("Not calibrated yet: odds use the raw heuristic, which is overconfident. "
+              "Run `dynasty-agent calibrate-matchup-model` first.")
+    print("Each team is assumed to field its best healthy lineup every week and its roster to hold as it is today.\n")
+
+    names, me = context.team_names(conn), context.my_roster_id(conn)
+    header = f"{'Team':<22} {'Wins now':>8} {'AvgWins':>8} {'PlayoffOdds':>12} {'AvgRank':>8} {'LastPlace':>10}"
+    print(header)
+    print("-" * len(header))
+    for rid, t in sorted(result["teams"].items(), key=lambda kv: -kv[1]["playoff_odds"]):
+        print(
+            f"{'*' if rid == me else ' '} {names.get(rid, f'roster {rid}')[:20]:<20} {t['current_wins']:>8g} "
+            f"{t['avg_final_wins']:>8.1f} {t['playoff_odds']:>12.1%} {t['avg_final_rank']:>8.1f} {t['last_place_odds']:>10.1%}"
+        )
+    print("\n* = your team")
 
 
 def cmd_chat(args: argparse.Namespace) -> None:
@@ -656,6 +752,36 @@ def main() -> None:
     )
     calibrate_parser.set_defaults(func=cmd_calibrate_blend)
 
+    backfill_parser = sub.add_parser(
+        "backfill-history",
+        help="Ingest weekly stats and real injury reports for past seasons, the history calibrate-matchup-model "
+        "needs. A real download (about 20 MB of play-by-play per season), several minutes for a range.",
+    )
+    backfill_parser.add_argument("--start-season", type=int, default=2017, help="First season to ingest (default 2017).")
+    backfill_parser.add_argument("--end-season", type=int, default=None, help="Last season (default: the last completed one).")
+    backfill_parser.add_argument("--force", action="store_true", help="Redo seasons already in the database.")
+    backfill_parser.set_defaults(func=cmd_backfill_history)
+
+    calibrate_matchup_parser = sub.add_parser(
+        "calibrate-matchup-model",
+        help="Test the win-probability heuristic against real NFL games and fit a correction for its "
+        "overconfidence. Needs backfill-history first. Every win probability then shows the corrected number.",
+    )
+    calibrate_matchup_parser.add_argument("--start-season", type=int, default=2018, help="First season to test (default 2018).")
+    calibrate_matchup_parser.add_argument("--end-season", type=int, default=None, help="Last season (default: the last completed one).")
+    calibrate_matchup_parser.set_defaults(func=cmd_calibrate_matchup_model)
+
+    simulate_parser = sub.add_parser(
+        "simulate-season",
+        help="Simulate the rest of the regular season many times: each team's playoff odds, average final wins "
+        "and rank, and last-place odds. Uses the calibrated win probabilities once they are fitted.",
+    )
+    simulate_parser.add_argument("--season", type=int, default=None, help="Projection baseline season (default: latest ingested).")
+    simulate_parser.add_argument("--vegas-season", type=int, default=None, help="Season of the Vegas lines (default: the current NFL season).")
+    simulate_parser.add_argument("--simulations", type=int, default=10000)
+    simulate_parser.add_argument("--seed", type=int, default=None, help="Fix the random draws for a repeatable run.")
+    simulate_parser.set_defaults(func=cmd_simulate_season)
+
     valuate_parser = sub.add_parser(
         "valuate",
         help="Print the roster with win-now value, three-year value, and the contend-or-rebuild verdict.",
@@ -695,7 +821,8 @@ def main() -> None:
     predict_parser = sub.add_parser(
         "predict-matchup",
         help="[DRAFT] Estimate win probability between two arbitrary rosters (not necessarily your own "
-        "league). A heuristic built from real season data, not a fitted or calibrated model, see matchup.py.",
+        "league). A heuristic built from real season data; its win probability is calibrated once "
+        "`calibrate-matchup-model` has run, see matchup.py.",
     )
     predict_parser.add_argument("--team-a", action="append", metavar="PLAYER", help="A player on team A. Repeatable.")
     predict_parser.add_argument("--team-b", action="append", metavar="PLAYER", help="A player on team B. Repeatable.")

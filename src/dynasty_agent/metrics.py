@@ -463,13 +463,12 @@ def blended_variance(prior_values: list[float], prior_weight_games: float, curre
 
 # -- Matchup-model calibration math ---------------------------------------------
 #
-# Ported unchanged from the unmerged worktree-phase4-college-data branch
-# (commit e8fb28c), math and tests only. Nothing calls it yet: that branch's
-# backtest fitted it on whole NFL teams' real games, which may not transfer
-# to 8-starter fantasy lineups, and its backtest code doesn't run against
-# this branch's blended projections. Re-deriving the fit is recorded as
-# follow-up work in PLANNING.md; until then every win probability stays
-# labeled a draft heuristic.
+# Ported from the earlier worktree-phase4-college-data branch (commit e8fb28c),
+# then fitted by calibration.py on this branch's blended projections against
+# 2,127 real NFL games. The fit is a slope only (fit_intercept=False): a free
+# intercept makes the answer depend on which team is called A and can flip the
+# favorite. It was fitted on whole NFL teams' games, so applying it to
+# 8-starter fantasy lineups is an approximation; see PLANNING.md.
 #
 # Platt scaling: a real, standard technique for recalibrating a heuristic's
 # probability estimates against real outcomes without changing the
@@ -509,7 +508,7 @@ def platt_scale(raw_prob: float, a: float, b: float) -> float:
 
 
 def fit_platt_scaling(
-    pairs: list[tuple[float, float]], iterations: int = 500, learning_rate: float = 0.05
+    pairs: list[tuple[float, float]], iterations: int = 500, learning_rate: float = 0.05, fit_intercept: bool = True
 ) -> tuple[float, float]:
     """Fits (a, b) minimizing log-loss between platt_scale(raw_prob, a, b)
     and real outcomes, via batch gradient descent. pairs are
@@ -517,7 +516,13 @@ def fit_platt_scaling(
     a real tie). Starts at (1.0, 0.0), the identity mapping, so an
     already-reasonable heuristic converges fast rather than starting from
     "always predict 0.5" at (0.0, 0.0). Returns (1.0, 0.0) unchanged for an
-    empty sample, never divides by zero."""
+    empty sample, never divides by zero.
+
+    fit_intercept=False fits the slope alone and returns b = 0.0. That is the
+    only correction that treats the two sides of a game alike: with b != 0,
+    platt_scale(1 - p) != 1 - platt_scale(p), so the answer would change with
+    which team happens to be called A, and a raw underdog near 50% can come
+    out a favorite."""
     if not pairs:
         return 1.0, 0.0
 
@@ -534,7 +539,8 @@ def fit_platt_scaling(
             grad_a += error * x
             grad_b += error
         a -= learning_rate * grad_a / n
-        b -= learning_rate * grad_b / n
+        if fit_intercept:
+            b -= learning_rate * grad_b / n
     return a, b
 
 

@@ -184,3 +184,69 @@ def test_sleeper_down_keeps_the_stored_matchups_and_says_how_old(conn, monkeypat
     note = weekly.sync_matchups_or_note(conn, 4)
     assert "couldn't be reached (ConnectError)" in note and "last synced matchups" in note
     assert conn.execute("SELECT count(*) FROM matchups WHERE week = 4").fetchone()[0] == 2  # kept
+
+
+# -- calibration ----------------------------------------------------------------------
+
+FIT = (0.3, -0.01)
+
+
+def store_fit(conn, a=FIT[0], b=FIT[1]):
+    conn.execute(
+        "INSERT INTO calibration_params (fitted_at, start_season, end_season, sample_size, platt_a, platt_b, "
+        "brier_before, brier_after, log_loss_before, log_loss_after, accuracy_before, accuracy_after) "
+        "VALUES ('t', 2018, 2025, 100, ?, ?, 0.3, 0.2, 0.9, 0.6, 0.6, 0.6)", (a, b))
+
+
+def favorite(conn):
+    setup(conn, opponent_fppg=4.0)  # a much weaker opponent: a lopsided raw probability
+    pair(conn, ["2qb", "2rb0", "2rb1", "2wr0", "2wr1", "2wr2", "2te", "2rb2"])
+
+
+def test_without_a_fit_the_result_is_raw_only(conn, week):
+    favorite(conn)
+    result = weekly.optimize_lineup(conn, 2025, 2026, 4, 1)
+    assert result["recommended_win_probability"] > 0.9
+    assert result["recommended_win_probability_calibrated"] is None
+    assert result["calibration_params"] is None
+
+
+def test_a_stored_fit_is_found_without_being_passed(conn, week):
+    from dynasty_agent.metrics import platt_scale
+
+    favorite(conn)
+    raw_only = weekly.optimize_lineup(conn, 2025, 2026, 4, 1)
+    store_fit(conn)
+    result = weekly.optimize_lineup(conn, 2025, 2026, 4, 1)
+    assert result["recommended_win_probability"] == raw_only["recommended_win_probability"]  # raw untouched
+    assert result["recommended_win_probability_calibrated"] == pytest.approx(
+        platt_scale(result["recommended_win_probability"], *FIT))
+    assert 0.5 < result["recommended_win_probability_calibrated"] < result["recommended_win_probability"]
+    assert result["calibration_params"] == FIT
+    # Scaling is increasing, so the chosen lineup cannot change.
+    assert [p["player_id"] for p in result["recommended_lineup"]] == [p["player_id"] for p in raw_only["recommended_lineup"]]
+
+
+def test_a_passed_fit_wins_over_the_stored_one(conn, week):
+    favorite(conn)
+    store_fit(conn)
+    result = weekly.optimize_lineup(conn, 2025, 2026, 4, 1, calibration_params=(0.5, 0.0))
+    assert result["calibration_params"] == (0.5, 0.0)
+
+
+def test_a_non_positive_slope_is_ignored_because_it_would_reorder_lineups(conn, week):
+    favorite(conn)
+    store_fit(conn, a=-0.2)
+    result = weekly.optimize_lineup(conn, 2025, 2026, 4, 1)
+    assert result["recommended_win_probability_calibrated"] is None
+    assert result["calibration_params"] is None
+
+
+def test_with_no_opponent_there_is_nothing_to_calibrate(conn, week):
+    add_league(conn)
+    add_roster(conn, 1)
+    add_player(conn, "kc", "WR", 12.0, roster_id=1, team="KC")
+    store_fit(conn)
+    result = weekly.optimize_lineup(conn, 2025, 2026, 4, 1)
+    assert result["recommended_win_probability"] is None
+    assert result["recommended_win_probability_calibrated"] is None

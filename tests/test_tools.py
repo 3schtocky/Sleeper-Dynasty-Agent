@@ -259,3 +259,42 @@ def test_a_term_asked_cold_is_a_definition_not_a_calculation(league):
     for topic in ("how did you get the market value", "how is win probability worked out"):
         r = tools.run_tool(league, "explain", {"topic": topic})
         assert not r.take and r.clarification is None, topic
+
+
+# -- the lineup tool and calibration ----------------------------------------------------
+
+
+def stub_lineup(monkeypatch, raw, calibrated):
+    from tests.test_explain import lineup_result
+
+    r = lineup_result(prob=raw)
+    r.update(recommended_win_probability_calibrated=calibrated, bench=[], recommended_lineup=[], unsupported_slots=[], empty_slots=[])
+    monkeypatch.setattr(tools.context, "current_week", lambda conn: 4)
+    monkeypatch.setattr(tools.context, "vegas_season", lambda conn: 2026)
+    monkeypatch.setattr(tools.weekly, "sync_matchups_or_note", lambda conn, week: None)
+    monkeypatch.setattr(tools.weekly, "optimize_lineup", lambda *a, **k: r)
+    monkeypatch.setattr(tools.formatters, "format_lineup", lambda *a, **k: "LINEUP TEXT")
+    r.setdefault("swaps_from_points_max", [])
+    return r
+
+
+def test_the_lineup_tool_quotes_the_calibrated_number_and_keeps_the_raw_beside_it(monkeypatch):
+    stub_lineup(monkeypatch, 0.423, 0.47)
+    result = tools._set_lineup(None, 1, 2025, {})
+    assert result.compact["win_probability"] == "47.0%" and result.compact["win_probability_raw"] == "42.3%"
+    assert "47.0%" in result.compact["headline"]
+    assert result.compact["caveat"] == tools.CALIBRATED_CAVEAT
+
+
+def test_the_lineup_tool_without_a_fit_quotes_the_raw_number_and_the_old_caveat(monkeypatch):
+    stub_lineup(monkeypatch, 0.423, None)
+    result = tools._set_lineup(None, 1, 2025, {})
+    assert result.compact["win_probability"] == "42.3%" and "win_probability_raw" not in result.compact
+    assert result.compact["caveat"] == tools.DRAFT_CAVEAT
+
+
+def test_win_caveat_defaults_to_the_draft_wording():
+    assert tools.win_caveat(None) == tools.DRAFT_CAVEAT
+    assert tools.win_caveat({"recommended_win_probability_calibrated": None}) == tools.DRAFT_CAVEAT
+    assert tools.win_caveat({"recommended_win_probability_calibrated": 0.5}) == tools.CALIBRATED_CAVEAT
+

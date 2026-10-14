@@ -1,15 +1,14 @@
 """DRAFT MODEL. Win probability for a specific NFL week between two
 arbitrary rosters, not necessarily your own league. This generalizes a
 one-off "who wins this weekend" lookup into real, reusable code, however it
-is a first draft, not a finished prediction engine. The intended next step
-is a proper prediction mode (calibrated against real outcomes, this project
-has none yet) with a trade bot built on top of it; this module is what that
-gets built from, not the finished thing. See PLANNING.md's "Out-of-band"
-section for the current status.
+is a first draft, not a finished prediction engine. See PLANNING.md's
+"Out-of-band" section for the current status.
 
-Read this as a heuristic, not a calibrated prediction: it has never been
-checked against real outcomes, this project has no historical win/loss
-data to check it against. What it does do honestly is build from real
+Read this as a heuristic. Its raw win probability was checked against real
+NFL results (calibration.py) and found overconfident, so `predict_matchup`
+reports a calibrated probability beside the raw one once
+`dynasty-agent calibrate-matchup-model` has stored a fit; the projections
+under it are still a heuristic. What it does honestly is build from real
 numbers at every step:
 
 - Each player's mean and sample variance of weekly fantasy_points from a
@@ -57,6 +56,7 @@ from dynasty_agent.metrics import (
     injury_adjusted_mean,
     injury_adjusted_variance,
     matchup_win_probability,
+    platt_scale,
     vegas_week_multiplier,
 )
 from dynasty_agent.prospect_model import rookie_projections
@@ -217,7 +217,13 @@ def _value_matchup_side(
 
 
 def predict_matchup(
-    conn: sqlite3.Connection, season: int, vegas_season: int, week: int, team_a: list[str], team_b: list[str]
+    conn: sqlite3.Connection,
+    season: int,
+    vegas_season: int,
+    week: int,
+    team_a: list[str],
+    team_b: list[str],
+    calibration_params: tuple[float, float] | None = None,
 ) -> dict:
     """Both sides valued for a specific week, meaned, varied, Vegas-adjusted,
     and turned into a win probability for team_a. Raises ValueError (from
@@ -234,7 +240,15 @@ def predict_matchup(
     CLOSING lines from last year's completed game, so the fallback never
     fired and it silently priced the wrong year's matchups. The caller
     (see cli.py) resolves vegas_season from the actual current NFL season,
-    not a guess."""
+    not a guess.
+
+    calibration_params, if given, is the (platt_a, platt_b) fitted by
+    `dynasty-agent calibrate-matchup-model` (see calibration.py). The caller
+    fetches it: calibration.py imports this module, so this one cannot
+    import calibration.py back. With None (never fitted) the result carries
+    only the raw probability, as before; with a fitted pair it adds
+    win_probability_*_calibrated beside the raw values, never replacing
+    them, so every number stays auditable."""
     week_implied = team_week_implied_points(vegas_season, week)
     season_avg_implied = team_season_avg_implied_points(vegas_season, week)
     week_has_data = bool(week_implied)
@@ -246,6 +260,7 @@ def predict_matchup(
     mean_diff = a["mean"] - b["mean"]
     std_diff = (a["variance"] + b["variance"]) ** 0.5
     win_prob_a = matchup_win_probability(mean_diff, std_diff)
+    calibrated_a = platt_scale(win_prob_a, *calibration_params) if calibration_params else None
 
     return {
         "season": season,
@@ -258,4 +273,6 @@ def predict_matchup(
         "std_diff": std_diff,
         "win_probability_a": win_prob_a,
         "win_probability_b": 1.0 - win_prob_a,
+        "win_probability_a_calibrated": calibrated_a,
+        "win_probability_b_calibrated": None if calibrated_a is None else 1.0 - calibrated_a,
     }

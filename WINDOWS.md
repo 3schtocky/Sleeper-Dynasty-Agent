@@ -113,6 +113,14 @@ dynasty-agent predict-matchup --week 1 `
 
 Everything reruns fresh against whatever's cached in the `data\` folder (git-ignored, local SQLite plus downloaded nflverse files). Nothing here needs a server or an account beyond your own Sleeper login. What each command actually does, and how the underlying math works, is documented once in the main [`README.md`](README.md), not repeated here, it applies exactly as written regardless of OS.
 
+**Calibrated win probabilities and the season simulation.** The raw win probability is badly overconfident (it was tested on 2,127 real NFL games), so fit the correction once, and again after each season. Same commands as on macOS, nothing OS-specific:
+
+```powershell
+dynasty-agent backfill-history               # past seasons' stats and injury reports, a few seconds a season
+dynasty-agent calibrate-matchup-model        # tests the heuristic and stores the correction
+dynasty-agent simulate-season                # playoff odds for every team
+```
+
 ## 6. Optional: talk to the agent (preview)
 
 Install Ollama from [ollama.com/download](https://ollama.com/download) (the Windows installer), open it, then in PowerShell:

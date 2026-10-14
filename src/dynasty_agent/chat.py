@@ -201,7 +201,7 @@ class ChatSession:
         turn.compact, turn.result = result.compact, result
         self.say(result.numbers)
         if result.name == "set_lineup":
-            self.say(self._dim(tools.DRAFT_CAVEAT))
+            self.say(self._dim(tools.win_caveat(result.data)))
         self.say()
         if not result.take:
             # Python's own text already answers (a definition): nothing for the model to add.
