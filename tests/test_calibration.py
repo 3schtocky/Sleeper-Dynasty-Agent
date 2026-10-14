@@ -127,3 +127,10 @@ def test_blend_before_week_leaves_the_default_unchanged(conn):
     assert blend.weekly_values(conn, "p", 2025, before_week=3) == [10.0, 20.0]
     assert blend.player_distribution(conn, "p", 2025)["current_games"] == 3
     assert blend.player_distribution(conn, "p", 2025, before_week=2)["current_games"] == 1
+
+
+def test_usable_rejects_a_missing_or_non_positive_slope():
+    assert calibration.usable(None) is None
+    assert calibration.usable((0.0, 0.1)) is None
+    assert calibration.usable((-0.3, 0.1)) is None
+    assert calibration.usable((0.4, -0.02)) == (0.4, -0.02)

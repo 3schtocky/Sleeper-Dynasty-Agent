@@ -26,3 +26,37 @@ def test_pick_price_note_names_the_price_used():
     assert formatters.pick_price_note({"tier": "Mid", "price_label": "2027 1st (Mid)", "season": 2027, "base_season": 2027}) == "  priced as 2027 1st (Mid)"
     assert "tier unknown" in formatters.pick_price_note({"tier": None, "price_label": "2027 1st", "season": 2027, "base_season": 2027})
     assert formatters.pick_price_note({"tier": None, "price_label": "2028 1st", "season": 2028, "base_season": 2027}) == ""
+
+
+def lineup_result(calibrated):
+    return {
+        "week": 5, "unsupported_slots": [], "empty_slots": [], "opponent_note": None, "opponent_source": "their set lineup",
+        "opponent_roster_id": 2, "opponent_mean": 110.0, "opponent_variance": 225.0,
+        "recommended_lineup": [], "recommended_win_probability": 0.423,
+        "recommended_win_probability_calibrated": calibrated,
+        "differs_from_points_max": False, "bench": [],
+    }
+
+
+def test_an_uncalibrated_win_probability_says_so_and_names_the_command():
+    text = formatters.format_lineup(lineup_result(None), 2026, 2026)
+    assert "Win probability: 42.3%\n" in text
+    assert "not yet calibrated" in text and "calibrate-matchup-model" in text
+
+
+def test_a_calibrated_win_probability_leads_and_keeps_the_raw_beside_it():
+    text = formatters.format_lineup(lineup_result(0.47), 2026, 2026)
+    assert "Win probability: 47.0%\n" in text
+    assert "raw heuristic 42.3%" in text
+    assert "not yet calibrated" not in text
+
+
+def test_an_older_result_without_the_calibrated_key_still_formats():
+    result = lineup_result(None)
+    del result["recommended_win_probability_calibrated"]
+    assert "Win probability: 42.3%" in formatters.format_lineup(result, 2026, 2026)
+
+
+def test_win_probability_lines_never_drop_the_raw_number():
+    assert "42.3%" in " ".join(formatters.win_probability_lines(0.423, 0.47))
+    assert "42.3%" in " ".join(formatters.win_probability_lines(0.423, None))

@@ -1,15 +1,14 @@
 """DRAFT MODEL. Win probability for a specific NFL week between two
 arbitrary rosters, not necessarily your own league. This generalizes a
 one-off "who wins this weekend" lookup into real, reusable code, however it
-is a first draft, not a finished prediction engine. The intended next step
-is a proper prediction mode (calibrated against real outcomes, this project
-has none yet) with a trade bot built on top of it; this module is what that
-gets built from, not the finished thing. See PLANNING.md's "Out-of-band"
-section for the current status.
+is a first draft, not a finished prediction engine. See PLANNING.md's
+"Out-of-band" section for the current status.
 
-Read this as a heuristic, not a calibrated prediction: it has never been
-checked against real outcomes, this project has no historical win/loss
-data to check it against. What it does do honestly is build from real
+Read this as a heuristic. Its raw win probability was checked against real
+NFL results (calibration.py) and found overconfident, so `predict_matchup`
+reports a calibrated probability beside the raw one once
+`dynasty-agent calibrate-matchup-model` has stored a fit; the projections
+under it are still a heuristic. What it does honestly is build from real
 numbers at every step:
 
 - Each player's mean and sample variance of weekly fantasy_points from a

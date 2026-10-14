@@ -52,6 +52,18 @@ def why_zero(p: dict) -> str:
     return ""
 
 
+def win_probability_lines(raw: float, calibrated: float | None) -> list[str]:
+    """The win-probability line. The raw heuristic is overconfident (see
+    calibration.py), so once a fit exists the calibrated number leads with the
+    raw one beside it, and before that the raw number says it is uncalibrated.
+    Never one without the other: every number stays auditable."""
+    if calibrated is None:
+        return [f"\nWin probability: {raw:.1%}",
+                "  (raw heuristic, not yet calibrated against real games: run `dynasty-agent calibrate-matchup-model`)"]
+    return [f"\nWin probability: {calibrated:.1%}",
+            f"  (raw heuristic {raw:.1%}, corrected for the overconfidence found when it was tested on past games)"]
+
+
 def lineup_warnings(result: dict) -> list[str]:
     out = []
     if result["unsupported_slots"]:
@@ -107,7 +119,7 @@ def format_lineup(result: dict, stats_season: int, vegas_season: int, sync_note:
         )
 
     if result["recommended_win_probability"] is not None:
-        out.append(f"\nWin probability: {result['recommended_win_probability']:.1%}")
+        out += win_probability_lines(result["recommended_win_probability"], result.get("recommended_win_probability_calibrated"))
     else:
         out.append("\nWin probability: n/a, no opponent to measure against yet; this is the most projected points.")
 
@@ -289,7 +301,7 @@ def format_digest(lineup: dict, targets: list[dict], winds: dict[str, str], stat
         out.append(f"  {p['full_name']:<20} {p['position']:<3} mean={p['mean']:>5.1f}{flag}{winds.get(p['player_id'], '')}{bye_note}")
 
     if lineup["recommended_win_probability"] is not None:
-        out.append(f"\nWin probability: {lineup['recommended_win_probability']:.1%}")
+        out += win_probability_lines(lineup["recommended_win_probability"], lineup.get("recommended_win_probability_calibrated"))
     else:
         out.append(f"\nWin probability: n/a, {lineup['opponent_note']}.")
     if lineup["differs_from_points_max"]:
@@ -300,7 +312,11 @@ def format_digest(lineup: dict, targets: list[dict], winds: dict[str, str], stat
         out.append(f"  {p['full_name']:<20} {p['position']:<3} mean={p['mean']:>5.1f}{why_zero(p)}")
 
     out.append("\n" + format_waiver_targets(targets))
-    out.append("\nThis is DRAFT-heuristic math throughout (see matchup.py, PLANNING.md), not a calibrated prediction.")
+    if lineup.get("recommended_win_probability_calibrated") is not None:
+        out.append("\nThis is heuristic math throughout (see matchup.py, PLANNING.md); the win probability is corrected for "
+                   "the heuristic's overconfidence found on past games (calibration.py).")
+    else:
+        out.append("\nThis is DRAFT-heuristic math throughout (see matchup.py, PLANNING.md), not a calibrated prediction.")
     return "\n".join(out)
 
 

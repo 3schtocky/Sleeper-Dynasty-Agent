@@ -7,7 +7,7 @@ import json
 import sys
 from datetime import datetime
 
-from dynasty_agent import blend, college, config, context, formatters, market, matchup, nflverse, picks, prospect_model, prospects, refresh, schedule, sleeper, taxi, valuation, weather, weekly
+from dynasty_agent import blend, calibration, college, config, context, formatters, market, matchup, nflverse, picks, prospect_model, prospects, refresh, schedule, sleeper, taxi, valuation, weather, weekly
 from dynasty_agent.db import get_db
 from dynasty_agent.errors import AgentError
 from dynasty_agent.sleeper import SleeperClient
@@ -422,14 +422,17 @@ def cmd_predict_matchup(args: argparse.Namespace) -> None:
     vegas_season = context.vegas_season(conn, args.vegas_season)
 
     try:
-        result = matchup.predict_matchup(conn, season, vegas_season, args.week, args.team_a or [], args.team_b or [])
+        result = matchup.predict_matchup(
+            conn, season, vegas_season, args.week, args.team_a or [], args.team_b or [],
+            calibration_params=calibration.usable(calibration.current_calibration(conn)),
+        )
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         raise SystemExit(1)
 
     print(
         f"Matchup prediction, {season} season FPPG basis, week {args.week} of the {vegas_season} season. "
-        f"DRAFT MODEL, a heuristic, not a fitted or calibrated prediction, see matchup.py and PLANNING.md."
+        f"A heuristic, see matchup.py and PLANNING.md."
     )
     if not result["week_has_vegas_data"]:
         print(f"No Vegas lines published yet for {vegas_season} week {args.week}. Running on season averages only, no week adjustment.")
@@ -461,8 +464,14 @@ def cmd_predict_matchup(args: argparse.Namespace) -> None:
     print_side("Team B", result["team_b"])
 
     print(f"Projected margin (A - B): {result['mean_diff']:+.1f}, combined std dev: {result['std_diff']:.1f}")
-    print(f"Team A win probability: {result['win_probability_a']:.1%}")
-    print(f"Team B win probability: {result['win_probability_b']:.1%}")
+    if result["win_probability_a_calibrated"] is None:
+        print(f"Team A win probability: {result['win_probability_a']:.1%}")
+        print(f"Team B win probability: {result['win_probability_b']:.1%}")
+        print("(raw heuristic, not yet calibrated against real games: run `dynasty-agent calibrate-matchup-model`)")
+    else:
+        print(f"Team A win probability: {result['win_probability_a_calibrated']:.1%} (raw heuristic {result['win_probability_a']:.1%})")
+        print(f"Team B win probability: {result['win_probability_b_calibrated']:.1%} (raw heuristic {result['win_probability_b']:.1%})")
+        print("Raw numbers corrected for the overconfidence found when the heuristic was tested on past games.")
 
 
 def cmd_optimize_lineup(args: argparse.Namespace) -> None:
@@ -695,7 +704,8 @@ def main() -> None:
     predict_parser = sub.add_parser(
         "predict-matchup",
         help="[DRAFT] Estimate win probability between two arbitrary rosters (not necessarily your own "
-        "league). A heuristic built from real season data, not a fitted or calibrated model, see matchup.py.",
+        "league). A heuristic built from real season data; its win probability is calibrated once "
+        "`calibrate-matchup-model` has run, see matchup.py.",
     )
     predict_parser.add_argument("--team-a", action="append", metavar="PLAYER", help="A player on team A. Repeatable.")
     predict_parser.add_argument("--team-b", action="append", metavar="PLAYER", help="A player on team B. Repeatable.")

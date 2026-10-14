@@ -255,3 +255,10 @@ def current_calibration(conn: sqlite3.Connection) -> tuple[float, float] | None:
     neutral 1.0 uses for a missing input."""
     row = conn.execute("SELECT platt_a, platt_b FROM calibration_params ORDER BY id DESC LIMIT 1").fetchone()
     return (row["platt_a"], row["platt_b"]) if row else None
+
+
+def usable(params: tuple[float, float] | None) -> tuple[float, float] | None:
+    """The fitted pair if applying it is safe, else None. A slope a <= 0 would
+    reverse or flatten the heuristic's ranking, so it is never applied;
+    fit_and_store_calibration warned when it stored one."""
+    return params if params is not None and params[0] > 0 else None

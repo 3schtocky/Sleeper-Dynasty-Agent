@@ -25,7 +25,7 @@ from dynasty_agent.matchup import (
     team_week_implied_points,
     teams_playing,
 )
-from dynasty_agent.calibration import current_calibration
+from dynasty_agent.calibration import current_calibration, usable
 from dynasty_agent.metrics import (
     FLEX_SLOT_ELIGIBILITY,
     best_lineup_total,
@@ -402,10 +402,7 @@ def optimize_lineup(
         if points_key is None or pkey > points_key:
             points_key, points_best = pkey, assignment
 
-    if calibration_params is None:
-        calibration_params = current_calibration(conn)
-    if calibration_params is not None and calibration_params[0] <= 0:
-        calibration_params = None
+    calibration_params = usable(current_calibration(conn) if calibration_params is None else calibration_params)
     best_prob_calibrated = (
         platt_scale(best_prob, *calibration_params) if calibration_params and best_prob is not None else None
     )
