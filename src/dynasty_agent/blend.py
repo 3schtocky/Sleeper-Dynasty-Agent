@@ -100,24 +100,32 @@ def backtest_rookies(conn: sqlite3.Connection, rookie_class: int) -> tuple[dict,
     return _score(cases), len(cases)
 
 
-def weekly_values(conn: sqlite3.Connection, player_id: str, season: int) -> list[float]:
+def weekly_values(conn: sqlite3.Connection, player_id: str, season: int, before_week: int | None = None) -> list[float]:
+    """A player's real weekly points for one season. before_week keeps only
+    earlier weeks: calibration backtests a past week with exactly what was
+    known going into it."""
     return [
         r[0]
         for r in conn.execute(
-            "SELECT fantasy_points FROM weekly_stats WHERE player_id = ? AND season = ? AND fantasy_points IS NOT NULL",
-            (player_id, str(season)),
+            "SELECT fantasy_points FROM weekly_stats WHERE player_id = ? AND season = ? AND fantasy_points IS NOT NULL"
+            + (" AND week < ?" if before_week is not None else ""),
+            (player_id, str(season)) + ((before_week,) if before_week is not None else ()),
         )
     ]
 
 
-def player_distribution(conn: sqlite3.Connection, player_id: str, season: int, rookie: dict | None = None) -> dict:
+def player_distribution(
+    conn: sqlite3.Connection, player_id: str, season: int, rookie: dict | None = None, before_week: int | None = None
+) -> dict:
     """One player's blended per-game mean and variance for `season`, with
     what went into them. The prior is last season's average (weight
     VETERAN_PRIOR_GAMES, or his actual game count if lower) or, for a
     rookie, the prospect model's projection (weight ROOKIE_PRIOR_GAMES).
     rookie, when given, is that player's prospect_model.rookie_projections
-    entry. variance is None when there's no real sample to estimate one."""
-    current = weekly_values(conn, player_id, season)
+    entry. variance is None when there's no real sample to estimate one.
+    before_week limits this season's games to the weeks before it (the prior
+    season is always whole)."""
+    current = weekly_values(conn, player_id, season, before_week)
     if rookie is not None:
         mean = blended_mean(rookie["projected_ppg"], ROOKIE_PRIOR_GAMES, current)
         variance = blended_variance([], 0.0, current)
