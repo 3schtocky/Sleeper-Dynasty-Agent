@@ -231,9 +231,14 @@ def explain_lineup(r: dict) -> Explanation:
     mean_me = sum(p["mean"] for p in lineup)
     var_me = sum(p["variance"] for p in lineup)
     steps: list[Step] = []
+    calibrated = r.get("recommended_win_probability_calibrated")
     limits = [
-        "Win probability is a draft heuristic: it treats every player's weekly score as independent, which teammates "
-        "are not, and it has not been checked against real results.",
+        "Win probability is a heuristic: it treats every player's weekly score as independent, which teammates are not."
+        + (" Tested on past NFL games it was too sure of itself, so the number shown is corrected; that correction was "
+           "fitted on NFL team games, not fantasy lineups, so read it as right in direction and rough in size."
+           if calibrated is not None else
+           " It has not been calibrated against real results yet (`dynasty-agent calibrate-matchup-model` does that), "
+           "and tested that way it has been too sure of itself."),
         "The injury factors (Questionable 0.85, Doubtful 0.25, Out 0) are round numbers, not fitted.",
     ]
 
@@ -294,6 +299,16 @@ def explain_lineup(r: dict) -> Explanation:
         f"(z = {diff / std:.2f})" if std > 0 else "no spread, so the sign of the gap decides", f"{prob:.1%}",
         "the same normal-curve idea behind converting a spread to a moneyline, simplified to two team totals",
     ))
+    if calibrated is not None:
+        a, b = r["calibration_params"]
+        again = metrics.platt_scale(prob, a, b)
+        if abs(again - calibrated) > TOLERANCE:
+            raise ExplanationMismatch("I couldn't reproduce the calibrated win probability shown, so I won't walk you through it.")
+        steps.append(Step(
+            "Calibration", f"sigmoid(a x ln(p / (1 - p)) + b) with p = {prob:.1%}, a = {a:.3f}, b = {b:+.3f}", f"{calibrated:.1%}",
+            "when the raw numbers were tested against past NFL games they were too sure of themselves; a below 1 pulls "
+            "them toward 50%, and b nudges the whole scale up or down",
+        ))
     if r.get("differs_from_points_max") and r.get("swaps_from_points_max"):
         swaps = "; ".join(f"{s['starts']} over {s['over']}" for s in r["swaps_from_points_max"])
         steps.append(Step(
@@ -536,8 +551,17 @@ GLOSSARY: dict[str, tuple[tuple[str, ...], str]] = {
         ("win probability", "win prob", "chance to win"),
         "The chance your projected lineup outscores your opponent's this week. It treats each team's total as a "
         "normal curve built from every player's average and variance and asks how likely the difference is above "
-        "zero. It is a draft heuristic that assumes players' scores are independent, and it has not been checked "
-        "against real results.",
+        "zero. It assumes players' scores are independent. That raw number was tested against past NFL games and "
+        "found too sure of itself, so once calibrated the tool shows the corrected number with the raw one beside it.",
+    ),
+    "calibration": (
+        ("calibrated", "calibrate", "platt", "overconfident", "overconfidence"),
+        "Calibration checks the win probability against what really happened. The tool replays past NFL games, "
+        "records the raw win probability for each side, and compares it with who actually won. The raw number was "
+        "too sure of itself: a team given 90% did not win 90% of the time. A two-number correction (a slope that "
+        "pulls probabilities toward 50% and a small shift) is fitted to the results and applied to what you see. It "
+        "fixes confidence only: it does not change who is favored, and it was fitted on NFL team games rather than "
+        "fantasy lineups.",
     ),
     "arbitrage": (
         ("arbitrage",),

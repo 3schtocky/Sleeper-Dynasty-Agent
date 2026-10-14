@@ -228,7 +228,8 @@ def test_the_win_probability_is_recomputed_from_the_gap_and_spread_shown():
     assert e.steps[-1].value == f"{r['recommended_win_probability']:.1%}"
     assert "Rice: Questionable x0.85, Vegas x1.10" in e.steps[1].formula
     assert "Rookie" in e.steps[2].why  # a borrowed variance is disclosed
-    assert any("draft heuristic" in line and "independent" in line for line in e.limits)
+    assert any("heuristic" in line and "independent" in line and "not been calibrated" in line for line in e.limits)
+    assert "Calibration" not in labels  # no fit stored, so nothing to explain there
 
 
 def test_a_win_probability_that_does_not_reproduce_is_never_explained():
@@ -368,3 +369,45 @@ def test_why_is_that_a_sell_is_an_explain_question_after_an_answer(question):
 def test_percentile_suffixes():
     assert [explain.ordinal(n) for n in (1, 2, 3, 11, 12, 13, 21, 55, 82, 100)] == [
         "1st", "2nd", "3rd", "11th", "12th", "13th", "21st", "55th", "82nd", "100th"]
+
+
+# -- calibration ----------------------------------------------------------------------
+
+FIT = (0.3, -0.01)
+
+
+def calibrated_lineup(tamper=None):
+    r = lineup_result()
+    shown = metrics.platt_scale(r["recommended_win_probability"], *FIT) if tamper is None else tamper
+    r.update(recommended_win_probability_calibrated=shown, calibration_params=FIT)
+    return r
+
+
+def test_a_calibrated_win_probability_gets_its_own_step_that_reproduces_the_number():
+    r = calibrated_lineup()
+    e = explain.explain_lineup(r)
+    assert [s.label for s in e.steps][-2:] == ["Win probability", "Calibration"]
+    step = e.steps[-1]
+    assert step.value == f"{r['recommended_win_probability_calibrated']:.1%}"
+    assert f"p = {r['recommended_win_probability']:.1%}" in step.formula and "a = 0.300" in step.formula and "b = -0.010" in step.formula
+    assert any("corrected" in line and "fantasy lineups" in line for line in e.limits)
+    assert not any("not been calibrated" in line for line in e.limits)
+
+
+def test_a_calibrated_number_that_does_not_reproduce_is_never_explained():
+    with pytest.raises(explain.ExplanationMismatch, match="calibrated win probability"):
+        explain.explain_lineup(calibrated_lineup(tamper=0.5))
+
+
+def test_the_calibration_step_comes_before_the_swap_explanation():
+    r = calibrated_lineup()
+    r.update(differs_from_points_max=True, points_max_total=30.5, swaps_from_points_max=[{"starts": "A", "slot": "FLEX", "over": "B"}])
+    labels = [s.label for s in explain.explain_lineup(r).steps]
+    assert labels[-3:] == ["Win probability", "Calibration", "Why this lineup and not the highest-points one"]
+
+
+def test_calibration_is_a_glossary_term_and_win_probability_no_longer_claims_it_is_unchecked():
+    term, definition = explain.lookup_glossary("what does calibrated mean")
+    assert term == "calibration" and "fantasy lineups" in definition
+    assert explain.lookup_glossary("overconfident")[0] == "calibration"
+    assert "has not been checked" not in explain.lookup_glossary("what is win probability")[1]

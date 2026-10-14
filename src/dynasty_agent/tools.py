@@ -64,9 +64,17 @@ TOOL_NAMES = [t["function"]["name"] for t in TOOLS]
 EXPLAIN = "explain"
 
 # What a win probability or projection here is, carried into every answer
-# that shows one: the matchup model is a heuristic never checked against
-# real outcomes (see matchup.py).
+# that shows one (see matchup.py and calibration.py).
 DRAFT_CAVEAT = "Win probabilities are a draft heuristic, not a calibrated prediction."
+CALIBRATED_CAVEAT = (
+    "Win probability is a heuristic, corrected for the overconfidence found when it was tested on past games."
+)
+
+
+def win_caveat(lineup_result: dict | None) -> str:
+    """The caveat that is true for this lineup result: calibrated or not."""
+    calibrated = lineup_result is not None and lineup_result.get("recommended_win_probability_calibrated") is not None
+    return CALIBRATED_CAVEAT if calibrated else DRAFT_CAVEAT
 
 
 @dataclass
@@ -173,7 +181,11 @@ def _set_lineup(conn, me, season, args) -> ToolResult:
     vegas = context.vegas_season(conn)
     note = weekly.sync_matchups_or_note(conn, week)
     r = weekly.optimize_lineup(conn, season, vegas, week, me)
-    prob = r["recommended_win_probability"]
+    raw_prob = r["recommended_win_probability"]
+    # The number to quote is the calibrated one when a fit exists, with the raw one kept beside it.
+    prob = r["recommended_win_probability_calibrated"]
+    if prob is None:
+        prob = raw_prob
     # The closest call: the best benched player, and the starter at his
     # position he'd replace (the lowest projected one).
     bench_note = None
@@ -191,12 +203,13 @@ def _set_lineup(conn, me, season, args) -> ToolResult:
         "week": week,
         "starters": [f"{p['full_name']} {p['position']} {p['mean']:.1f}" + formatters.why_zero(p) for p in r["recommended_lineup"]],
         "win_probability": f"{prob:.1%}" if prob is not None else "n/a",
+        **({"win_probability_raw": f"{raw_prob:.1%}"} if r["recommended_win_probability_calibrated"] is not None else {}),
         "opponent_projected": f"{r['opponent_mean']:.1f}" if r["opponent_mean"] is not None else r["opponent_note"],
         "best_bench": [f"{p['full_name']} {p['position']} {p['mean']:.1f}" + formatters.why_zero(p)
                        for p in sorted(r["bench"], key=lambda p: -p["mean"])[:3]],
         "swaps_from_most_points": [f"{s['starts']} over {s['over']}" for s in r["swaps_from_points_max"]],
         "warnings": formatters.lineup_warnings(r) + ([note] if note else []),
-        "caveat": DRAFT_CAVEAT,
+        "caveat": win_caveat(r),
     }
     return ToolResult("set_lineup", formatters.format_lineup(r, season, vegas, note), compact, data=r)
 

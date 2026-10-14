@@ -209,3 +209,16 @@ def test_grounding_normalizes_how_numbers_are_written():
         assert not grounding.ungrounded(fine, allowed), fine
     assert grounding.ungrounded("about 78%", allowed) == {"78"}
     assert grounding.ungrounded("QB4 and WR2", allowed) == set()  # position ranks aren't numbers
+
+
+def test_the_lineup_answer_carries_the_caveat_that_is_true_for_it(monkeypatch):
+    for calibrated, wanted in ((None, tools.DRAFT_CAVEAT), (0.47, tools.CALIBRATED_CAVEAT)):
+        monkeypatch.setattr(tools, "run_tool", lambda conn, name, args, recent=None, c=calibrated: tools.ToolResult(
+            name, numbers="Win probability: 47.0%", compact={"win_probability": "47.0%"},
+            data={"recommended_win_probability_calibrated": c}))
+        s = session(FakeModel([([{"name": "set_lineup", "arguments": {}}], "")], [["Start them."]]))
+        s.ask("Who should I start?")
+        out = s.out.getvalue()
+        assert wanted in out
+        assert (tools.DRAFT_CAVEAT in out) == (calibrated is None)
+
