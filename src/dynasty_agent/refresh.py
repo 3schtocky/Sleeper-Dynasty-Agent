@@ -118,7 +118,8 @@ def run(conn: sqlite3.Connection, today: date | None = None) -> list[dict]:
         def refit() -> str:
             report = prospect_model.fit_and_store(conn, scoring, latest_complete_season(season, season_type))
             cv = report["variants"]["baseline_draft_capital"]["cv"]
-            return f"refit on {expected}, draft-capital model held-out R^2 {cv['r2']:.3f}"
+            warning = prospect_model.coverage_warning(report["coverage"])
+            return f"refit on {expected}, draft-capital model held-out R^2 {cv['r2']:.3f}" + (f". {warning}" if warning else "")
         _step(results, "prospect model", refit)
 
     return results

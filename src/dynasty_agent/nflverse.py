@@ -25,6 +25,7 @@ layer one.
 from __future__ import annotations
 
 import sqlite3
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -52,6 +53,9 @@ FILES = {
 }
 
 
+DOWNLOAD_ATTEMPTS = 3
+
+
 def _url(kind: str, season: int) -> str:
     tag, template = FILES[kind]
     return f"{RELEASE_BASE}/{tag}/{template.format(season=season)}"
@@ -65,11 +69,18 @@ def download(url: str, dest: Path) -> Path:
     the corrupt file as a valid cache hit, forever."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_name(dest.name + ".part")
-    with httpx.stream("GET", url, timeout=60.0, follow_redirects=True) as response:
-        response.raise_for_status()
-        with open(tmp, "wb") as f:
-            for chunk in response.iter_bytes(chunk_size=1024 * 1024):
-                f.write(chunk)
+    for attempt in range(DOWNLOAD_ATTEMPTS):
+        try:
+            with httpx.stream("GET", url, timeout=60.0, follow_redirects=True) as response:
+                response.raise_for_status()
+                with open(tmp, "wb") as f:
+                    for chunk in response.iter_bytes(chunk_size=1024 * 1024):
+                        f.write(chunk)
+            break
+        except httpx.TransportError:  # timeouts and dropped connections; a 404 is an HTTPStatusError and still raises at once
+            if attempt == DOWNLOAD_ATTEMPTS - 1:
+                raise
+            time.sleep(2 * (attempt + 1))
     tmp.replace(dest)
     return dest
 

@@ -377,6 +377,20 @@ def leave_one_class_out(rows: list[dict], names: tuple[str, ...]) -> dict:
     return {"mae": sum(errors) / len(errors), "r2": 1 - ss_res / ss_tot if ss_tot else 0.0, "n": len(targets)}
 
 
+MIN_COVERAGE = 0.8
+
+
+def coverage_warning(coverage: dict) -> str | None:
+    """A fit on a small share of the drafted players is far weaker than it
+    looks, and the usual cause is a half-finished first-run college backfill."""
+    if coverage["drafted"] and coverage["used"] < MIN_COVERAGE * coverage["drafted"]:
+        return (
+            f"WARNING: only {coverage['used']} of {coverage['drafted']} drafted players had college data, so this fit is weak. "
+            "Rerun `dynasty-agent ingest-college --season 2008 --through <current season>` (it resumes where it stopped), then refit."
+        )
+    return None
+
+
 def fit_and_store(conn: sqlite3.Connection, scoring_settings: dict, last_complete_season: int) -> dict:
     """Fit every variant on each class from FIRST_TRAINING_CLASS through the
     newest with three completed NFL seasons, cross-validate each, and store
