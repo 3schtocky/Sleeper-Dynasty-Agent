@@ -1,0 +1,454 @@
+{
+ "model": "qwen3:4b-instruct",
+ "recorded": "2026-09-29",
+ "routes": {
+  "Who should I start this week?": {
+   "calls": [
+    {
+     "name": "set_lineup",
+     "arguments": {}
+    }
+   ],
+   "text": ""
+  },
+  "Set my lineup": {
+   "calls": [
+    {
+     "name": "set_lineup",
+     "arguments": {}
+    }
+   ],
+   "text": ""
+  },
+  "Who do I sit this week?": {
+   "calls": [
+    {
+     "name": "set_lineup",
+     "arguments": {}
+    }
+   ],
+   "text": ""
+  },
+  "Optimize my starters for Sunday": {
+   "calls": [
+    {
+     "name": "set_lineup",
+     "arguments": {}
+    }
+   ],
+   "text": ""
+  },
+  "Should I trade Jonah Coleman and my 2028 2nd for a 2027 1st?": {
+   "calls": [
+    {
+     "name": "evaluate_trade",
+     "arguments": {
+      "send_players": [
+       "Jonah Coleman"
+      ],
+      "send_picks": [
+       "2028 2nd"
+      ],
+      "receive_picks": [
+       "2027 1st"
+      ]
+     }
+    }
+   ],
+   "text": ""
+  },
+  "Would you give CeeDee Lamb for Puka Nacua and Jaxon Smith-Njigba?": {
+   "calls": [
+    {
+     "name": "evaluate_trade",
+     "arguments": {
+      "send_players": [
+       "CeeDee Lamb"
+      ],
+      "receive_players": [
+       "Puka Nacua",
+       "Jaxon Smith-Njigba"
+      ]
+     }
+    }
+   ],
+   "text": ""
+  },
+  "I'm offered Bijan Robinson for Rashee Rice and my 2027 first. Take it?": {
+   "calls": [
+    {
+     "name": "evaluate_trade",
+     "arguments": {
+      "send_players": [
+       "Rashee Rice"
+      ],
+      "send_picks": [
+       "2027 1st"
+      ],
+      "receive_players": [
+       "Bijan Robinson"
+      ]
+     }
+    }
+   ],
+   "text": ""
+  },
+  "Someone wants my 2027 1st for their Puka Nacua. Good deal?": {
+   "calls": [
+    {
+     "name": "evaluate_trade",
+     "arguments": {
+      "send_players": [],
+      "send_picks": [
+       "2027 1st"
+      ],
+      "receive_players": [
+       "Puka Nacua"
+      ],
+      "receive_picks": []
+     }
+    }
+   ],
+   "text": ""
+  },
+  "Can I get Puka Nacua for CeeDee Lamb straight up?": {
+   "calls": [
+    {
+     "name": "evaluate_trade",
+     "arguments": {
+      "send_players": [
+       "CeeDee Lamb"
+      ],
+      "receive_players": [
+       "Puka Nacua"
+      ]
+     }
+    }
+   ],
+   "text": ""
+  },
+  "Should I trade away Lamar Jackson for a 2028 second?": {
+   "calls": [
+    {
+     "name": "evaluate_trade",
+     "arguments": {
+      "send_players": [
+       "Lamar Jackson"
+      ],
+      "receive_picks": [
+       "2028 2nd"
+      ]
+     }
+    }
+   ],
+   "text": ""
+  },
+  "A guy offered me his 2028 1st for Rome Odunze, should I accept?": {
+   "calls": [
+    {
+     "name": "evaluate_trade",
+     "arguments": {
+      "send_players": [],
+      "send_picks": [],
+      "receive_players": [
+       "Rome Odunze"
+      ],
+      "receive_picks": [
+       "2028 1st"
+      ]
+     }
+    }
+   ],
+   "text": ""
+  },
+  "Trade my '27 first for their 2028 1st?": {
+   "calls": [
+    {
+     "name": "evaluate_trade",
+     "arguments": {
+      "send_players": [],
+      "send_picks": [
+       "2027 1st"
+      ],
+      "receive_players": [],
+      "receive_picks": [
+       "2028 1st"
+      ]
+     }
+    }
+   ],
+   "text": ""
+  },
+  "Is 2027-1 for 2028-1 plus 2028-2 worth it for me?": {
+   "calls": [
+    {
+     "name": "evaluate_trade",
+     "arguments": {
+      "send_players": [],
+      "send_picks": [
+       "2027 1st"
+      ],
+      "receive_players": [],
+      "receive_picks": [
+       "2028 1st",
+       "2028 2nd"
+      ]
+     }
+    }
+   ],
+   "text": ""
+  },
+  "Would you trade my 2027 round 1 pick for Trey Benson?": {
+   "calls": [
+    {
+     "name": "evaluate_trade",
+     "arguments": {
+      "send_players": [
+       "my 2027 1st"
+      ],
+      "receive_players": [
+       "Trey Benson"
+      ]
+     }
+    }
+   ],
+   "text": ""
+  },
+  "Should I flip my 2027 1st and 2027 2nd for Jahmyr Gibbs?": {
+   "calls": [
+    {
+     "name": "evaluate_trade",
+     "arguments": {
+      "send_players": [],
+      "send_picks": [
+       "2027 1st",
+       "2027 2nd"
+      ],
+      "receive_players": [
+       "Jahmyr Gibbs"
+      ],
+      "receive_picks": []
+     }
+    }
+   ],
+   "text": ""
+  },
+  "Trade my 2029 third for a 2028 third?": {
+   "calls": [
+    {
+     "name": "evaluate_trade",
+     "arguments": {
+      "send_players": [],
+      "send_picks": [
+       "2029 3rd"
+      ],
+      "receive_picks": [
+       "2028 3rd"
+      ]
+     }
+    }
+   ],
+   "text": ""
+  },
+  "Trade Tom Brady for Puka Nacua?": {
+   "calls": [
+    {
+     "name": "evaluate_trade",
+     "arguments": {
+      "send_players": [
+       "Tom Brady"
+      ],
+      "receive_players": [
+       "Puka Nacua"
+      ]
+     }
+    }
+   ],
+   "text": ""
+  },
+  "Trade Kenneth Walker for Puka Nacua?": {
+   "calls": [
+    {
+     "name": "evaluate_trade",
+     "arguments": {
+      "send_players": [
+       "Kenneth Walker"
+      ],
+      "receive_players": [
+       "Puka Nacua"
+      ]
+     }
+    }
+   ],
+   "text": ""
+  },
+  "Am I a contender or should I rebuild?": {
+   "calls": [
+    {
+     "name": "my_team",
+     "arguments": {}
+    }
+   ],
+   "text": ""
+  },
+  "How's my team looking?": {
+   "calls": [
+    {
+     "name": "my_team",
+     "arguments": {}
+    }
+   ],
+   "text": ""
+  },
+  "Am I a contender?": {
+   "calls": [
+    {
+     "name": "my_team",
+     "arguments": {}
+    }
+   ],
+   "text": ""
+  },
+  "Should I rebuild?": {
+   "calls": [
+    {
+     "name": "my_team",
+     "arguments": {}
+    }
+   ],
+   "text": ""
+  },
+  "Who's worth picking up on waivers?": {
+   "calls": [
+    {
+     "name": "waiver_targets",
+     "arguments": {}
+    }
+   ],
+   "text": ""
+  },
+  "Who should I pick up?": {
+   "calls": [
+    {
+     "name": "waiver_targets",
+     "arguments": {
+      "player": "none"
+     }
+    }
+   ],
+   "text": ""
+  },
+  "Any tight ends worth picking up?": {
+   "calls": [
+    {
+     "name": "waiver_targets",
+     "arguments": {
+      "position": "TE"
+     }
+    }
+   ],
+   "text": ""
+  },
+  "How much should I bid on Trey Benson?": {
+   "calls": [
+    {
+     "name": "waiver_targets",
+     "arguments": {
+      "player": "Trey Benson"
+     }
+    }
+   ],
+   "text": ""
+  },
+  "What's a good FAAB bid for Justin Fields?": {
+   "calls": [
+    {
+     "name": "waiver_targets",
+     "arguments": {
+      "player": "Justin Fields",
+      "position": "QB"
+     }
+    }
+   ],
+   "text": ""
+  },
+  "Should I sell my first round pick?": {
+   "calls": [
+    {
+     "name": "pick_advice",
+     "arguments": {}
+    }
+   ],
+   "text": ""
+  },
+  "Should I sell my first?": {
+   "calls": [
+    {
+     "name": "pick_advice",
+     "arguments": {}
+    }
+   ],
+   "text": ""
+  },
+  "Are my draft picks worth more than the rookies they'd get?": {
+   "calls": [
+    {
+     "name": "pick_advice",
+     "arguments": {}
+    }
+   ],
+   "text": ""
+  },
+  "Should I put anyone on my taxi squad?": {
+   "calls": [
+    {
+     "name": "taxi_plan",
+     "arguments": {}
+    }
+   ],
+   "text": ""
+  },
+  "Anyone I should put on taxi?": {
+   "calls": [
+    {
+     "name": "taxi_plan",
+     "arguments": {}
+    }
+   ],
+   "text": ""
+  },
+  "Who should go on IR?": {
+   "calls": [
+    {
+     "name": "taxi_plan",
+     "arguments": {}
+    }
+   ],
+   "text": ""
+  },
+  "What's the capital of France?": {
+   "calls": [],
+   "text": "I can help with fantasy football questions like lineups, trades, team outlook, waiver pickups, draft picks, taxi and IR. Let me know how I can assist!"
+  },
+  "thanks!": {
+   "calls": [],
+   "text": "You're welcome! If you have any questions about your team, trades, waiver pickups, or draft picks, feel free to ask. I'm here to help with your Sleeper league strategy!"
+  },
+  "Write me a short poem about autumn": {
+   "calls": [],
+   "text": "Leaves dance in golden light,  \nThe wind hums a quiet song.  \nTrees wear their crimson pride,  \nAnd autumn paints the world in long.  \n\nCrisp air, a breath of grace,  \nThe harvest moon above.  \nA season of stillness, peace\u2014  \nAutumn's beauty, deep and wide."
+  },
+  "Who won the Super Bowl in 1990?": {
+   "calls": [],
+   "text": "I can help with your fantasy football team, such as lineups, trades, team outlook, waiver pickups, draft picks, taxi and IR. I cannot provide information about the Super Bowl in 1990."
+  },
+  "Don't look anything up, just guess how many points CeeDee Lamb scores this week": {
+   "calls": [],
+   "text": "I cannot guess how many points CeeDee Lamb will score this week without looking up real-time data or analytics. Please ask about your team, lineup, trades, or waiver targets instead."
+  },
+  "Roughly what's Puka Nacua's trade value? Just ballpark it": {
+   "calls": [],
+   "text": "Puka Nacua's trade value is not directly available in the tools, so I cannot provide a ballpark estimate based on current data. I can help with lineups, trades, team outlook, waiver pickups, draft picks, taxi and IR if you have a specific question."
+  }
+ }
+}
