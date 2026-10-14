@@ -1,6 +1,6 @@
 # Windows install guide
 
-Dynasty Agent runs the same on Windows as it does on macOS and Linux, same Python, same `uv`, same commands. Nothing in the code shells out to anything OS-specific (checked directly, not assumed: no `subprocess` calls, no hardcoded `/`-style paths, no POSIX-only system calls anywhere in `src/`). The only real differences are how you install `uv` in the first place and how your terminal wants line breaks written. This guide covers both, in copy-pasteable PowerShell.
+Dynasty Agent runs the same on Windows as it does on macOS and Linux, same Python, same `pip`, same commands. Nothing in the code shells out to anything OS-specific (checked directly, not assumed: no `subprocess` calls, no hardcoded `/`-style paths, no POSIX-only system calls anywhere in `src/`). The only real differences are how you set up Python and the venv and how your terminal wants line breaks written. This guide covers both, in copy-pasteable PowerShell.
 
 If you hit something this guide doesn't cover, the "How the numbers work" and command reference in the main [`README.md`](README.md) apply exactly as written, those aren't OS-specific either.
 
@@ -26,40 +26,38 @@ winget install --id Git.Git -e
 
 Close and reopen PowerShell afterward so it picks up the new PATH entry.
 
-## 2. Install uv
+## 2. Install Python
+
+You need Python 3.12 or newer. Check first:
 
 ```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+py --version
 ```
 
-That's `uv`'s own official installer (verified live before writing this: `astral.sh/uv/install.ps1` redirects to a real, signed installer script). It installs `uv` and adds it to your PATH. Close and reopen PowerShell afterward, then confirm it worked:
+If that errors or shows something older than 3.12:
 
 ```powershell
-uv --version
+winget install --id Python.Python.3.12 -e
 ```
 
-Prefer a package manager instead of piping a script into `iex`? That's a fair instinct:
-
-```powershell
-winget install --id astral-sh.uv -e
-```
-
-Either way works identically for everything after this step. You do **not** need to separately install Python; `uv` downloads and manages Python 3.12 for you the first time it's needed.
+Close and reopen PowerShell afterward so it picks up the new PATH entry.
 
 ## 3. Clone and set up the project
 
 ```powershell
 git clone https://github.com/3schtocky/Sleeper-Dynasty-AI-Agent.git
 cd Sleeper-Dynasty-AI-Agent
-uv sync
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
 ```
 
-`uv sync` creates a `.venv` folder, installs Python 3.12 if it isn't already on your machine, and installs every dependency pinned in `uv.lock`. This is also where Windows most commonly differs from macOS/Linux in a Python project, activating a virtual environment (that `Activate.ps1` script Windows users so often hit an execution-policy wall on). You can skip all of that here: every command below runs through `uv run`, which finds and uses the right environment automatically. No activation step, ever.
+This creates a `.venv` folder and installs every dependency from `pyproject.toml`. Activate the venv (the `Activate.ps1` line) in each new PowerShell window before running `dynasty-agent`. If it fails with "running scripts is disabled", see Troubleshooting below.
 
 ## 4. Point it at your own league
 
 ```powershell
-uv run dynasty-agent init --username <your-sleeper-username>
+dynasty-agent init --username <your-sleeper-username>
 ```
 
 This looks up your Sleeper user ID, finds your current-season dynasty leagues, and writes a `.env` file in the project folder (already in `.gitignore`, it never gets committed) with your username, user ID, league ID, and draft ID. If you're in more than one league this season, it lists them and asks you to re-run with `--league-id <id>` to pick one.
@@ -75,9 +73,9 @@ then open `.env` in Notepad (or any editor) and fill in the four values. Your le
 ## 5. Run it
 
 ```powershell
-uv run dynasty-agent refresh                        # everything current: league, values, this season's stats
-uv run dynasty-agent roster                         # sanity check: is this your team?
-uv run dynasty-agent valuate                        # win-now/three-year value + the verdict
+dynasty-agent refresh                        # everything current: league, values, this season's stats
+dynasty-agent roster                         # sanity check: is this your team?
+dynasty-agent valuate                        # win-now/three-year value + the verdict
 ```
 
 First run on a new machine: `sync`, `ingest-nflverse --season <last completed season>`, `ingest-draft-data`, `ingest-college --season 2008 --through <current season>`, then `fit-prospect-model`; see the main README.
@@ -85,7 +83,7 @@ First run on a new machine: `sync`, `ingest-nflverse --season <last completed se
 **Daily refresh.** `dynasty-agent schedule` uses macOS's launchd and tells you so on Windows. The Windows equivalent is one Task Scheduler command, run once from the project folder (written from Microsoft's documented `schtasks` syntax, not yet run on a Windows machine for this project):
 
 ```powershell
-schtasks /Create /SC DAILY /ST 06:00 /TN "dynasty-agent refresh" /TR "cmd /c cd /d $PWD && uv run dynasty-agent refresh >> data\logs\refresh.log 2>&1"
+schtasks /Create /SC DAILY /ST 06:00 /TN "dynasty-agent refresh" /TR "cmd /c cd /d $PWD && .venv\Scripts\dynasty-agent.exe refresh >> data\logs\refresh.log 2>&1"
 ```
 
 Remove it with `schtasks /Delete /TN "dynasty-agent refresh" /F`.
@@ -93,7 +91,7 @@ Remove it with `schtasks /Delete /TN "dynasty-agent refresh" /F`.
 Evaluate a trade. PowerShell line continuation is a backtick (`` ` ``) at the very end of the line, not the backslash (`\`) you'd use in Bash, and it has to be the *last* character on the line, no trailing space after it or PowerShell won't recognize it:
 
 ```powershell
-uv run dynasty-agent trade `
+dynasty-agent trade `
   --send "Rashee Rice" `
   --receive-pick 2027-1 --receive-pick 2027-3 `
   --discount-rate 0.20
@@ -102,13 +100,13 @@ uv run dynasty-agent trade `
 Or skip the continuation entirely and put it on one line, which sidesteps the trailing-space gotcha altogether:
 
 ```powershell
-uv run dynasty-agent trade --send "Rashee Rice" --receive-pick 2027-1 --receive-pick 2027-3 --discount-rate 0.20
+dynasty-agent trade --send "Rashee Rice" --receive-pick 2027-1 --receive-pick 2027-3 --discount-rate 0.20
 ```
 
 Predict a matchup, same backtick rule:
 
 ```powershell
-uv run dynasty-agent predict-matchup --week 1 `
+dynasty-agent predict-matchup --week 1 `
   --team-a "Jalen Hurts" --team-a "Derrick Henry" --team-a "Puka Nacua" `
   --team-b "Jayden Daniels" --team-b "James Cook" --team-b "Drake London"
 ```
@@ -121,21 +119,21 @@ Install Ollama from [ollama.com/download](https://ollama.com/download) (the Wind
 
 ```powershell
 ollama pull qwen3:4b-instruct
-uv run dynasty-agent chat
+dynasty-agent chat
 ```
 
 Everything else about `chat` is the same as on macOS; see "Talk to the agent" in `README.md`. To watch requests arrive, Ollama's log is at `$env:LOCALAPPDATA\Ollama\server.log`.
 
 ## Troubleshooting
 
-**"running scripts is disabled on this system"** when running the `uv` installer, or anything else PowerShell-script-based. The installer command above already includes `-ExecutionPolicy ByPass` for itself, so this shouldn't hit you there, however if you see it elsewhere, PowerShell's default execution policy blocks unsigned scripts. Check your current policy and loosen it for your own account only (safer than a machine-wide change):
+**"running scripts is disabled on this system"** when running `Activate.ps1`, or anything else PowerShell-script-based. PowerShell's default execution policy blocks unsigned scripts. Check your current policy and loosen it for your own account only (safer than a machine-wide change):
 
 ```powershell
 Get-ExecutionPolicy
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 ```
 
-**Windows Defender (or another antivirus) flags or quarantines `uv.exe` or a downloaded Python interpreter.** This is a known false-positive pattern with newly-published binaries and freshly downloaded executables in general, not specific to this project. If it happens, add an exclusion for `uv`'s install directory (typically `%USERPROFILE%\.local\bin` or wherever the installer reports) and re-run the install.
+**Windows Defender (or another antivirus) flags or quarantines `python.exe` or a downloaded Python installer.** This is a known false-positive pattern with newly-published binaries and freshly downloaded executables in general, not specific to this project. If it happens, add an exclusion for Python's install directory (typically `%LOCALAPPDATA%\Programs\Python`) and re-run the install.
 
 **A path-length error deep inside `.venv`, something mentioning `MAX_PATH` or a path over 260 characters.** Rare on a current Windows 10/11 install (long paths are enabled by default in recent versions) but possible if yours is older or was upgraded from a much older install, or if you cloned into a deeply nested folder. Two ways out: clone somewhere shallower (like `C:\dev\` instead of a folder six levels deep in your Documents), or enable long path support once, as an administrator:
 
@@ -152,4 +150,4 @@ then restart.
 
 ## What's actually different from macOS/Linux, concretely
 
-For the curious, not just "trust me": the whole Python application was audited for OS-specific assumptions while writing this guide, grepped for `subprocess`, hardcoded POSIX paths, `os.path.join` (this project uses `pathlib.Path` throughout instead, which produces the correct separator for whatever OS it runs on automatically), `chmod`/symlink calls, and shell scripts. None exist. Two small things *were* found and fixed as part of adding this guide: two places wrote or read a text file without an explicit `encoding="utf-8"`, which works by accident on most systems but isn't guaranteed on Windows, where the default text encoding often isn't UTF-8. Both now pin the encoding explicitly. Beyond that, the only real differences are the ones this guide walks through: how you install `uv`, and how your shell wants multi-line commands written.
+For the curious, not just "trust me": the whole Python application was audited for OS-specific assumptions while writing this guide, grepped for `subprocess`, hardcoded POSIX paths, `os.path.join` (this project uses `pathlib.Path` throughout instead, which produces the correct separator for whatever OS it runs on automatically), `chmod`/symlink calls, and shell scripts. None exist. Two small things *were* found and fixed as part of adding this guide: two places wrote or read a text file without an explicit `encoding="utf-8"`, which works by accident on most systems but isn't guaranteed on Windows, where the default text encoding often isn't UTF-8. Both now pin the encoding explicitly. Beyond that, the only real differences are the ones this guide walks through: how you set up Python and the venv, and how your shell wants multi-line commands written.

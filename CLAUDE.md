@@ -11,7 +11,7 @@ Commands that exist today: `init`, `sync`, `refresh` (everything current, by cal
 ## Environment
 
 - Developed on a MacBook Air M4, 16GB RAM, macOS. The tool itself is not macOS-only: audited directly for OS-specific assumptions (no subprocess calls, no hardcoded POSIX paths, `pathlib.Path` throughout) and runs identically on Windows, see `WINDOWS.md`. One deliberate exception: `schedule` calls macOS's `launchctl`, isolated in `schedule.py` and refusing cleanly elsewhere; Windows uses Task Scheduler instead.
-- Python 3.12, managed with `uv`. Run everything through `uv run`, add dependencies with `uv add`.
+- Python 3.12+, plain `venv` + `pip` (`pip install -e ".[dev]"`). Activate `.venv` and run `dynasty-agent` and `pytest` directly; add dependencies by editing `pyproject.toml`.
 - SQLite for persistent storage. DuckDB for analytical queries over play-by-play data.
 - One local model, deliberately, for Phase 5's `chat`: an open-source model served by Ollama on the user's own machine (`qwen3:4b-instruct` by default, `LLM_MODEL` in `.env`). Changed on purpose from the original "no local models, every call hits an API" rule, because the user asked to talk to the agent with a model that runs on this Mac, at no cost per question and with no league data leaving the machine. The model routes and explains; it never computes a number (see `grounding.py`). No training, no GPU work beyond Ollama's own inference, and every other command runs without it.
 - Memory stays modest. nflverse play-by-play files are large. Read them with DuckDB or pyarrow, never load a full file into a pandas DataFrame.

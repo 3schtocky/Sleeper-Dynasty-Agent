@@ -15,7 +15,7 @@ Built on its **own branch** (`phase5-chat-preview`), tried by the user, and only
 `main` after that test plus the full test suite pass.
 
 **In the preview**
-- `uv run dynasty-agent chat`, talking to `qwen3:4b-instruct` through Ollama.
+- `dynasty-agent chat`, talking to `qwen3:4b-instruct` through Ollama.
 - Six tools on the real league: start/sit lineup, trade evaluation, my team, waiver targets,
   pick advice, taxi/IR plan.
 - Python writes the numbers block (instant, can't be misquoted); the model streams a 1-3
@@ -33,7 +33,7 @@ evaluation set and model comparison, the pinned bottom-right status bar, a local
   on `main` at `5ec74fa`. Public backup: github.com/3schtocky/Sleeper-Dynasty-Agent (remote
   `backup`, not auto-synced: after `git push`, run `git push backup --all`).
 - **Built and on main**: Phases 0-4 plus the Phase 3.5 audit. 118 tests pass
-  (`uv run pytest`). `refresh` runs daily at 06:00 via launchd.
+  (`pytest`). `refresh` runs daily at 06:00 via launchd.
 - **`PLANNING.md`** has the full Phase 5 plan (section "Phase 5: talk to the agent"), the model
   bake-off, the UX target, and the live-stats requirement. `CLAUDE.md` is the reference doc and
   working rules (writing style: no em dashes, no Oxford commas, active voice).
@@ -100,7 +100,7 @@ harness bugs already fixed there.
 
 ## 5. Build steps (each verified before the next)
 
-Work on branch `phase5-chat-preview`. Run `uv run pytest` after every step.
+Work on branch `phase5-chat-preview`. Run `pytest` after every step.
 
 **Step 1: separate logic from printing, for the six tools only.** Move the formatting out of
 `cmd_optimize_lineup`, `cmd_trade`, `cmd_valuate`, `cmd_faab`/`digest`'s waiver section,
@@ -147,7 +147,7 @@ a one-line note. Carry the draft caveat for matchup and win-probability numbers 
 responses, asserting that routing reaches the right tool with normalized arguments.
 
 **Step 7: document and hand over.** Add a README section ("Talk to the agent (preview)":
-install Ollama, `ollama pull qwen3:4b-instruct`, `uv run dynasty-agent chat`) and a
+install Ollama, `ollama pull qwen3:4b-instruct`, `dynasty-agent chat`) and a
 PLANNING.md entry recording what was verified live. Change CLAUDE.md's "No GPU work and no
 local models" rule deliberately, with the reason. Push the branch, open a PR, and do **not**
 merge until the user has tried it.

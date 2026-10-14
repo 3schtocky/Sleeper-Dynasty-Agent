@@ -14,7 +14,7 @@ Before anything else, read these, in this order:
 3. The "Phase 5: talk to the agent" section of PLANNING.md
 
 Then, before writing any code:
-- Run `dynasty-agent refresh` (the session-start rule) and `uv run pytest` (118 should pass),
+- Run `dynasty-agent refresh` (the session-start rule) and `pytest` (118 should pass),
   and confirm Ollama is running with qwen3:4b-instruct available (`ollama list`).
 - Ask me what my clean first-time install test from GitHub turned up.
 - Ask me whether to review the unmerged `worktree-phase4-college-data` branch first

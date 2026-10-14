@@ -142,7 +142,7 @@ A ranked prospect board for the next rookie draft, with a recommendation on any 
 
 ## Phase 5: talk to the agent (preview built on branch `phase5-chat-preview`, 2026-09-29)
 
-Goal: ask "should I trade Coleman and a 2028 2nd for a 2027 1st?" or "who do I start this week?" in plain English, answered by an open-source model running locally on the MacBook Air M4 (16GB), instead of typing `uv run` commands.
+Goal: ask "should I trade Coleman and a 2028 2nd for a 2027 1st?" or "who do I start this week?" in plain English, answered by an open-source model running locally on the MacBook Air M4 (16GB), instead of typing commands.
 
 ### Decisions confirmed with the user
 - Runtime: Ollama, chosen as the easiest to understand and build with (`ollama pull qwen3:4b`; `ollama run` to try the bare model by hand; a plain local HTTP API the existing `httpx` reaches, no new Python dependency).
@@ -182,7 +182,7 @@ Models live in `~/Open Source Models` (the user's choice, outside the repo; `~/.
 Design rules this surfaced, before any code: never ask the model for anything Python already knows (current week, the user's roster, the season), Python fills those in; and accept any reasonable argument format from the model (it wrote picks as "2027-1" in one run and "2027 1st" in the next), the tool layer normalizes.
 
 ### User experience target
-`git clone`, then `uv run dynasty-agent` with no arguments opens a first-run setup: checks Ollama and downloads the model (saying the size first), asks the Sleeper username and league, loads the data with progress (replacing today's five first-run commands), asks what matters to the user (contending, rebuilding, trades, waivers, rookies), offers the daily refresh, then opens the chat with a short brief tuned to those priorities. Before building it, the user will run a first-time install from GitHub by hand to find where today's onboarding breaks.
+`git clone`, then `dynasty-agent` with no arguments opens a first-run setup: checks Ollama and downloads the model (saying the size first), asks the Sleeper username and league, loads the data with progress (replacing today's five first-run commands), asks what matters to the user (contending, rebuilding, trades, waivers, rookies), offers the daily refresh, then opens the chat with a short brief tuned to those priorities. Before building it, the user will run a first-time install from GitHub by hand to find where today's onboarding breaks.
 
 ### Requirement: live model stats, bottom right (requested 2026-09-29)
 While talking to the agent, the user sees the model working, the way LM Studio and Ollama's own app show it: a status bar pinned to the bottom-right of the terminal.

@@ -10,7 +10,7 @@ equivalent instead.
 
 launchd runs a job missed while the Mac slept as soon as it wakes, and it
 starts jobs with an almost empty PATH, so the plist carries absolute paths
-for uv and the project, found at install time.
+for the `dynasty-agent` executable and the project, found at install time.
 """
 
 from __future__ import annotations
@@ -29,15 +29,15 @@ PLIST_PATH = Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.plist"
 LOG_PATH = DATA_DIR / "logs" / "refresh.log"
 
 
-def build_plist(uv_path: str, project_root: Path, hour: int, minute: int, log_path: Path) -> dict:
+def build_plist(exe_path: str, project_root: Path, hour: int, minute: int, log_path: Path) -> dict:
     return {
         "Label": LABEL,
-        "ProgramArguments": [uv_path, "run", "--project", str(project_root), "dynasty-agent", "refresh"],
+        "ProgramArguments": [exe_path, "refresh"],
         "WorkingDirectory": str(project_root),
         "StartCalendarInterval": {"Hour": hour, "Minute": minute},
         "StandardOutPath": str(log_path),
         "StandardErrorPath": str(log_path),
-        "EnvironmentVariables": {"PATH": f"{Path(uv_path).parent}:/usr/bin:/bin:/usr/sbin:/sbin"},
+        "EnvironmentVariables": {"PATH": f"{Path(exe_path).parent}:/usr/bin:/bin:/usr/sbin:/sbin"},
         "RunAtLoad": False,
     }
 
@@ -67,15 +67,17 @@ def _launchctl(*args: str) -> subprocess.CompletedProcess:
 
 def install(hour: int, minute: int) -> str:
     _require_macos()
-    uv_path = shutil.which("uv")
-    if uv_path is None:
-        raise RuntimeError("Couldn't find `uv` on PATH, the scheduled job needs its full path.")
+    exe_path = Path(sys.executable).parent / "dynasty-agent"
+    if not exe_path.exists():
+        exe_path = shutil.which("dynasty-agent")
+    if not exe_path:
+        raise RuntimeError("Couldn't find `dynasty-agent`. Activate the venv (or `pip install -e .`) first, the scheduled job needs its full path.")
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     PLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
     domain = f"gui/{os.getuid()}"
     _launchctl("bootout", domain, str(PLIST_PATH))  # replace any earlier install; fails harmlessly if none
     with open(PLIST_PATH, "wb") as f:
-        plistlib.dump(build_plist(uv_path, PROJECT_ROOT, hour, minute, LOG_PATH), f)
+        plistlib.dump(build_plist(str(exe_path), PROJECT_ROOT, hour, minute, LOG_PATH), f)
     result = _launchctl("bootstrap", domain, str(PLIST_PATH))
     if result.returncode != 0:
         raise RuntimeError(f"launchctl bootstrap failed: {result.stderr.strip() or result.stdout.strip()}")

@@ -6,10 +6,10 @@ from dynasty_agent import schedule
 
 
 def test_plist_uses_absolute_paths_launchd_can_run():
-    plist = schedule.build_plist("/Users/me/.local/bin/uv", Path("/Users/me/proj"), 6, 30, Path("/Users/me/proj/data/logs/refresh.log"))
-    assert plist["ProgramArguments"] == ["/Users/me/.local/bin/uv", "run", "--project", "/Users/me/proj", "dynasty-agent", "refresh"]
+    plist = schedule.build_plist("/Users/me/proj/.venv/bin/dynasty-agent", Path("/Users/me/proj"), 6, 30, Path("/Users/me/proj/data/logs/refresh.log"))
+    assert plist["ProgramArguments"] == ["/Users/me/proj/.venv/bin/dynasty-agent", "refresh"]
     assert plist["StartCalendarInterval"] == {"Hour": 6, "Minute": 30}
-    assert plist["EnvironmentVariables"]["PATH"].startswith("/Users/me/.local/bin:")
+    assert plist["EnvironmentVariables"]["PATH"].startswith("/Users/me/proj/.venv/bin:")
     assert plist["StandardOutPath"] == plist["StandardErrorPath"] == "/Users/me/proj/data/logs/refresh.log"
 
 
