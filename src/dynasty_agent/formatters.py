@@ -6,6 +6,7 @@ or the network, so the CLI and the chat print from one path."""
 from __future__ import annotations
 
 from dynasty_agent import blend, picks, prospect_model
+from dynasty_agent.explain import ordinal
 
 ROOKIE_FOOTNOTE = (
     f"\n* Rookie: FPPG starts from the prospect model's projection from real draft capital (fit on 2018-2023 "
@@ -223,9 +224,9 @@ def format_my_team(team: dict) -> str:
     out.append(f"Confidence: {verdict['confidence']}")
     out.append(
         f"Inputs: win-now total {verdict['my_win_now_total']:.1f} "
-        f"({verdict['win_now_percentile']:.0f}th percentile against the other {verdict['compared_against']} teams), "
+        f"({ordinal(verdict['win_now_percentile'])} percentile against the other {verdict['compared_against']} teams), "
         f"three-year total {verdict['my_three_year_total']:.1f} "
-        f"({verdict['three_year_percentile']:.0f}th percentile against the other {verdict['compared_against']} teams), "
+        f"({ordinal(verdict['three_year_percentile'])} percentile against the other {verdict['compared_against']} teams), "
         f"{verdict['games_played']} games played this season."
     )
     return "\n".join(out)
@@ -245,7 +246,7 @@ def format_faab(result: dict) -> str:
     )
     out.append(
         f"Win-now value: {result['target_win_now_value']:.1f} points-per-game scale "
-        f"({result['percentile_among_available']:.0f}th percentile among players actually available on waivers)."
+        f"({ordinal(result['percentile_among_available'])} percentile among players actually available on waivers)."
     )
     out.append(gain_line(result))
     out.append(

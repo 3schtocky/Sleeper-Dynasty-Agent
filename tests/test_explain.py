@@ -363,3 +363,8 @@ def test_the_bid_step_shows_the_unrounded_product_so_the_model_never_has_to_work
 @pytest.mark.parametrize("question", ["Why is that a sell?", "Why is that a buy?", "Why is it a hold?"])
 def test_why_is_that_a_sell_is_an_explain_question_after_an_answer(question):
     assert explain.detect(question, has_recent=True)
+
+
+def test_percentile_suffixes():
+    assert [explain.ordinal(n) for n in (1, 2, 3, 11, 12, 13, 21, 55, 82, 100)] == [
+        "1st", "2nd", "3rd", "11th", "12th", "13th", "21st", "55th", "82nd", "100th"]
