@@ -634,7 +634,7 @@ def cmd_chat_eval(args: argparse.Namespace) -> None:
         if args.conversations:
             from dynasty_agent import conversation_eval
 
-            report = conversation_eval.run(get_db(), client)
+            report = conversation_eval.run(get_db(), client, conversation_eval.SCENARIOS + conversation_eval.HARD_SCENARIOS if args.hard else None)
             for r in report["results"]:
                 print(f"  {'ok  ' if r['ok'] else 'FAIL'} [{r['scenario']}] {r['question']}"
                       + (f"\n         {r['why']}\n         reply: {r['reply'][:300]}" if r["why"] else ""))
@@ -903,6 +903,7 @@ def main() -> None:
     eval_parser.add_argument("--model", default=None, help="An Ollama model to score instead of LLM_MODEL.")
     eval_parser.add_argument("--conversations", action="store_true",
                              help="Run the scripted multi-turn conversations on the real league instead of the routing cases.")
+    eval_parser.add_argument("--hard", action="store_true", help="With --conversations: also run the tougher scenarios.")
     eval_parser.add_argument("--record", action="store_true", help="Save the answers for the offline routing test.")
     eval_parser.set_defaults(func=cmd_chat_eval)
 

@@ -276,7 +276,7 @@ def test_a_follow_up_is_routed_with_the_earlier_question(fake_tool):
     s.ask("Should I trade Coleman for Puka?")
     s.ask("what if I add Lamb?")
     assert "Earlier question: Should I trade Coleman for Puka?" in model.seen[-1][-1]["content"]
-    assert model.seen[-1][-1]["content"].endswith("Follow-up: what if I add Lamb?")
+    assert "Follow-up: what if I add Lamb?" in model.seen[-1][-1]["content"]
 
 
 def test_an_unrelated_question_after_a_tool_turn_is_routed_alone(fake_tool):
@@ -319,3 +319,23 @@ def test_a_pick_listed_among_the_players_is_not_mistaken_for_a_description(fake_
     call = {"name": "evaluate_trade", "arguments": {"send_players": ["2028 2nd"], "receive_players": ["Jonah Coleman"]}}
     s = session(FakeModel([([call], "")], [["Fine."]]))
     assert s.ask("I'd get Jonah Coleman for my 2028 2nd").tool == "evaluate_trade"
+
+
+def test_a_follow_up_after_a_talk_turn_still_finds_the_earlier_tool_question(fake_tool):
+    call = {"name": "evaluate_trade", "arguments": {}}
+    model = FakeModel([([call], ""), ([], "x"), ([call], "")], [["Fine."], ["fantasy"], ["The numbers say so."], ["Fine."]])
+    s = session(model)
+    s.ask("Should I trade Coleman for Puka?")
+    s.ask("is he worth it?")
+    s.ask("what about Lamb instead?")
+    assert "Earlier question: Should I trade Coleman for Puka?" in model.seen[-1][-1]["content"]
+
+
+def test_a_question_naming_a_known_player_is_never_called_off_topic():
+    import sqlite3
+    conn = sqlite3.connect(":memory:")
+    conn.execute("CREATE TABLE players (player_id, full_name, position)")
+    conn.execute("INSERT INTO players VALUES ('1', 'Jaxon Smith-Njigba', 'WR')")
+    s = chat.ChatSession(conn=conn, client=FakeModel([]), out=io.StringIO())
+    assert s._names_a_player("Tell me about Jaxon Smith-Njigba") and not s._names_a_player("Tell me about pizza")
+    assert s._on_topic("Tell me about Jaxon Smith-Njigba")

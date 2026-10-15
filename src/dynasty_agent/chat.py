@@ -38,7 +38,10 @@ CHAT_SYSTEM = (
     "reference. End with at most one short question, only when it would help. You can discuss anything fantasy football: strategy, rules, scoring, positions, dynasty philosophy, "
     "buying and selling, how to think about a decision. You do not have live data in this reply, so never state a "
     "specific player's stat, value, projection, injury or roster status, and never give a number you are not sure "
-    "of; if the user needs one, say you can check it for them and ask which player or question. Do not make a "
+    "of; if the user needs one, say you can check it for them and ask which player or question. You know nothing "
+    "reliable about any specific player: not his age, team, role, rookie or veteran status, past seasons, "
+    "strengths or outlook. When the user names a player, do not describe him or judge him; say you would check "
+    "him against your league's numbers, and offer to run a trade or value check on him. Do not make a "
     "trade, lineup or waiver recommendation about a named player without that check. If the user asks about "
     "something that is not fantasy football, say so kindly in one sentence and steer back. Write plain text only: "
     "no markdown, no bold, no headings, no bullet symbols, no emoji."
@@ -153,6 +156,8 @@ _FOLLOW_UP = re.compile(r"^(and|but|what if|what about|how about|ok(ay)?,? (and|
 _GENERIC_PLAYER = re.compile(r"\d|\b(year|old|young|veteran|rookie|aging|a|an|some|any|guy|player)\b", re.I)
 # Earlier turns the talk path can see.
 TALK_TURNS = 6
+# How far back a follow-up may reach for the tool question it builds on (a talk turn in between is fine).
+FOLLOW_UP_TURNS = 4
 
 # The model sometimes writes markdown anyway; a terminal shows it literally.
 _PLAIN = re.compile(r"\*+|__|`|^#+\s*", re.M)
@@ -207,8 +212,11 @@ class ChatSession:
         if last is not None and last.clarification:
             messages.append({"role": "user", "content": last.question})
             messages.append({"role": "assistant", "content": last.reply})
-        elif last is not None and last.tool and _FOLLOW_UP.search(question):
-            question = f"Earlier question: {last.question}\nFollow-up: {question}"
+        elif _FOLLOW_UP.search(question):
+            earlier = next((t for t in reversed(self.history[-FOLLOW_UP_TURNS:]) if t.tool and not t.clarification), None)
+            if earlier is not None:
+                question = (f"Earlier question: {earlier.question}\nFollow-up: {question}\nReply by calling the same tool "
+                            f"again with the follow-up's change applied to the earlier question.")
         messages.append({"role": "user", "content": question})
         return messages
 
@@ -307,11 +315,22 @@ class ChatSession:
         self.history.append(turn)
         return turn
 
+    def _names_a_player(self, question: str) -> bool:
+        """True when the question contains the full name of a skill-position player in the database."""
+        if self.conn is None:
+            return False
+        row = self.conn.execute(
+            "SELECT 1 FROM players WHERE position IN ('QB','RB','WR','TE') AND length(full_name) > 6 "
+            "AND ? LIKE '%' || lower(full_name) || '%' LIMIT 1", (question.lower(),)).fetchone()
+        return row is not None
+
     def _on_topic(self, question: str, previous: str | None = None) -> bool:
         """A one-word model call, far more reliable on a 4B model than an
         instruction buried in the chat prompt. Anything but "other" passes.
         The previous question is shown so a follow-up ("is that a big gap?")
         is judged in context."""
+        if self._names_a_player(question):
+            return True  # "tell me about Jaxon Smith-Njigba" has no football word in it, but it is football
         shown = f"Previous message: {previous}\nMessage to classify: {question}" if previous else question
         messages = [{"role": "system", "content": TOPIC_SYSTEM}, {"role": "user", "content": shown}]
         text = "".join(e for e in self.client.stream(messages, options=llm.TOPIC_OPTIONS) if isinstance(e, str))

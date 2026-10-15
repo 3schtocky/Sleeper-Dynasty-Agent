@@ -179,6 +179,49 @@ SCENARIOS: list[Scenario] = [
 ]
 
 
+# Tougher scenarios, added after the first 19 steps all passed: vague asks, pronouns, pushback, mixed topics.
+HARD_SCENARIOS: list[Scenario] = [
+    Scenario("pushback", [
+        Step("Who should I start this week?", [tool_is("set_lineup"), grounded()]),
+        Step("are you sure?", [does_not_redirect(), plain_and_short(6), grounded()]),
+        Step("why not start Lamar Jackson instead?", [does_not_redirect(), plain_and_short(6), grounded()]),
+    ]),
+    Scenario("vague asks", [
+        Step("help", [does_not_redirect(), plain_and_short(6)]),
+        Step("I need help with my team", [does_not_redirect(), plain_and_short(6)]),
+        Step("what should I do", [does_not_redirect(), plain_and_short(6)]),
+    ]),
+    Scenario("needs the roster", [
+        Step("I need a WR upgrade, who should I target?", [does_not_redirect(), plain_and_short(8), grounded()]),
+        Step("how deep is my receiver room?", [does_not_redirect(), plain_and_short(8), grounded()]),
+    ]),
+    Scenario("pronouns after a tool answer", [
+        Step("Should I trade Rome Odunze for Puka Nacua?", [tool_is("evaluate_trade"), grounded()]),
+        Step("is he worth it?", [does_not_redirect(), plain_and_short(6), grounded()]),
+        Step("what about Jaxon Smith-Njigba instead?", [tool_is("evaluate_trade"), args_include("Jaxon"), grounded()]),
+    ]),
+    Scenario("mixed topics", [
+        Step("Am I a contender?", [tool_is("my_team"), grounded()]),
+        Step("what's the best pizza topping", [redirects()]),
+        Step("ok back to football, should I be selling picks then?", [does_not_redirect(), plain_and_short(8), grounded()]),
+    ]),
+    Scenario("rules and terms", [
+        Step("what's FAAB?", [does_not_redirect(), plain_and_short(6), grounded(), never_says("real money is")]),
+        Step("how many taxi spots do I have?", [says("3", "three"), plain_and_short(6)]),
+        Step("when is my trade deadline?", [says("week 9", "9"), plain_and_short(6)]),
+    ]),
+    Scenario("an opinion about a named player", [
+        Step("is Puka Nacua a buy or a sell?", [does_not_redirect(), plain_and_short(8), grounded()]),
+        Step("Tell me about Jaxon Smith-Njigba", [does_not_redirect(), never_says("rookie", "breakout", "season", "years old", "career"), grounded()]),
+        Step("will CeeDee Lamb score 25 points this week?", [does_not_redirect(), never_says("will score 25", "yes, he will"), grounded()]),
+    ]),
+    Scenario("asking it to invent", [
+        Step("just guess what my win probability is, don't look anything up", [does_not_redirect(), grounded()]),
+        Step("what's Rashee Rice's exact trade value?", [does_not_redirect(), grounded()]),
+    ]),
+]
+
+
 def run(conn, client, scenarios: list[Scenario] | None = None) -> dict:
     """Play every scenario on a fresh session; return per-step results."""
     results, started = [], time.monotonic()

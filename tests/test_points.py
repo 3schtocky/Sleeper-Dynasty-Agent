@@ -31,3 +31,10 @@ def test_waiver_list_leaves_the_budget_out_and_names_the_top_pickup():
     c = {"headline": "best pickup: Jake Tonges TE, bid $33", "targets": ["Jake Tonges TE: +0.1 to lineup, bid $33"], "remaining_budget": "$100"}
     pts = points.build("waiver_targets", c, None)
     assert pts[0].startswith("Best pickup: Jake Tonges") and not any("$100" in p for p in pts)
+
+
+def test_taxi_facts_state_the_slots_and_how_many_are_used():
+    c = {"recommendation": ["move X to taxi (why)"], "next_season": "everyone fits"}
+    d = {"settings": {"taxi_slots": 3, "reserve_slots": 1}, "taxi_now": [], "ir_now": []}
+    pts = points.build("taxi_plan", c, d)
+    assert pts[0] == "You have 3 taxi slots and 0 are in use; you have 1 IR slot and 0 in use."

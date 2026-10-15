@@ -92,8 +92,11 @@ def _picks(c: dict, rows: list[dict]) -> list[str]:
     return pts
 
 
-def _taxi(c: dict) -> list[str]:
-    pts = [f"Recommended: {m}." for m in c["recommendation"]]
+def _taxi(c: dict, data: dict) -> list[str]:
+    st = data["settings"]
+    pts = [f"You have {st['taxi_slots']} taxi slots and {len(data['taxi_now'])} are in use; "
+           f"you have {st['reserve_slots']} IR slot and {len(data['ir_now'])} in use."]
+    pts += [f"Recommended: {m}." for m in c["recommendation"]]
     if c.get("taxi_moves_locked_by_deadline"):
         pts.append("Taxi moves are locked by the deadline.")
     pts.append(f"Next season: {c['next_season']}.")
@@ -113,5 +116,5 @@ def build(name: str, compact: dict, data) -> list[str]:
     if name == "pick_advice":
         return _picks(compact, data["rows"])
     if name == "taxi_plan":
-        return _taxi(compact)
+        return _taxi(compact, data)
     return []
