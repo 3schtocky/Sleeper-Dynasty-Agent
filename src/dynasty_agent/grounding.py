@@ -38,3 +38,28 @@ def allowed_numbers(*sources: str) -> set[str]:
 def ungrounded(text: str, allowed: set[str]) -> set[str]:
     """The numbers in text that nothing in allowed accounts for."""
     return {n for n in numbers_in(text) if n not in allowed}
+
+
+# Free talk (no tool ran) may use plain counts and ages: "age 27", "top 10", "three years". It may not state a
+# statistic or value: a percentage, a dollar amount, a decimal, a big number that is not a year, or any number
+# followed by a scoring unit ("20 points", "1,000 yards").
+_STAT_UNIT = re.compile(r"\s*(?:fantasy |ppr )?(points?|pts|yards?|yds|touchdowns?|tds|receptions?|catches|targets?|carries|ppg|fppg)\b", re.I)
+
+
+def unsupported_claims(text: str, allowed: set[str]) -> set[str]:
+    """Numbers in free talk that read as a stat or value and are not in allowed."""
+    bad = set()
+    for m in _NUMBER.finditer(text or ""):
+        n = _canonical(m.group())
+        if n in allowed:
+            continue
+        token, value = m.group(), float(n)
+        year = "." not in n and 1990 <= value <= 2040
+        claim = (
+            "$" in token or "." in n or value >= 100 and not year
+            or text[m.end():m.end() + 1] == "%"
+            or _STAT_UNIT.match(text, m.end()) is not None
+        )
+        if claim:
+            bad.add(n)
+    return bad

@@ -272,8 +272,8 @@ class ChatSession:
 
     def _talk(self, turn: Turn) -> Turn:
         """No tool fits: chat about fantasy football in the model's own words.
-        Numbers still pass the grounding check: only the question's own
-        numbers, the vetted reference and the recent conversation are allowed."""
+        Plain counts and ages pass; a stat or value must come from the question,
+        the vetted reference or the recent conversation (grounding.unsupported_claims)."""
         if not self._on_topic(turn.question, self.history[-1].question if self.history else None):
             turn.reply = OFF_TOPIC_REPLY
             self.say(OFF_TOPIC_REPLY)
@@ -289,7 +289,8 @@ class ChatSession:
         # Numbers the user was already shown, or the model already said, stay quotable.
         known = [r.numbers for r in self._recent_results()] + [t.reply for t in earlier]
         reply, stats = self._stream_checked(
-            messages, grounding.allowed_numbers(turn.question, reference, *known), llm.CHAT_OPTIONS)
+            messages, grounding.allowed_numbers(turn.question, reference, *known), llm.CHAT_OPTIONS,
+            check=grounding.unsupported_claims)
         turn.reply = reply or "I can help with lineups, trades, team outlook, waivers, draft picks, taxi and IR."
         if not reply:
             self.say(turn.reply)
@@ -307,8 +308,9 @@ class ChatSession:
         text = "".join(e for e in self.client.stream(messages, options=llm.TOPIC_OPTIONS) if isinstance(e, str))
         return "other" not in text.lower()
 
-    def _stream_checked(self, messages: list[dict], allowed: set[str], options: dict | None) -> tuple[str, llm.Stats | None]:
-        """Stream a reply one checked sentence at a time; stop at the first sentence quoting a number not in `allowed`."""
+    def _stream_checked(self, messages: list[dict], allowed: set[str], options: dict | None,
+                        check=grounding.ungrounded) -> tuple[str, llm.Stats | None]:
+        """Stream a reply one checked sentence at a time; stop at the first sentence `check` flags."""
         stats: list[llm.Stats] = []
 
         def text_only(events):
@@ -322,7 +324,7 @@ class ChatSession:
         stream = self.client.stream(messages, options=options)
         for sentence in sentences(text_only(stream)):
             sentence = _PLAIN.sub("", sentence)
-            bad = grounding.ungrounded(sentence, allowed)
+            bad = check(sentence, allowed)
             if bad:
                 self.say(self._dim(f"(The rest of the model's note quoted {', '.join(sorted(bad))}, which isn't in the "
                                    f"numbers above, so it's left out. The numbers above stand on their own.)"))

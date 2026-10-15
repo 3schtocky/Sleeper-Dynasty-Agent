@@ -293,3 +293,10 @@ def test_the_topic_check_sees_the_previous_question(fake_tool):
     s.ask("is that a big gap?")
     topic_call = model.talk_messages[1]
     assert "Previous message: Should I trade Coleman?" in topic_call[-1]["content"]
+
+
+def test_talk_may_mention_an_age_but_not_invent_a_stat(fake_tool):
+    s = session(FakeModel([([], "x")], [["fantasy"], ["Backs fade after age 27. He scores 20 points a game."]]))
+    s.ask("when do backs fade?")
+    out = s.out.getvalue()
+    assert "age 27." in out and "20 points" not in out
