@@ -61,16 +61,20 @@ def test_a_sentence_with_an_invented_number_is_never_shown(fake_tool):
     assert "5 more things" not in out and turn.reply == "Don't do it."
 
 
-def test_no_tool_reply_with_a_made_up_number_is_replaced(fake_tool):
-    s = session(FakeModel([([], "Your team scores 142 points a week.")]))
+def test_talk_reply_with_a_made_up_number_is_cut(fake_tool):
+    s = session(FakeModel([([], "I can help with lineups and trades.")], [["fantasy"], ["Happy to talk it through. Your team scores 142 points a week."]]))
     s.ask("how good am I")
-    assert "142" not in s.out.getvalue() and "outside what I can answer" in s.out.getvalue()
+    out = s.out.getvalue()
+    assert "Happy to talk it through." in out and "142 points" not in out
 
 
-def test_a_plain_no_tool_reply_is_shown(fake_tool):
-    s = session(FakeModel([([], "Paris. I can help with lineups, trades and waivers.")]))
-    s.ask("What's the capital of France?")
-    assert s.out.getvalue().startswith("Paris.") and "tool: none" in s.out.getvalue()
+def test_a_no_tool_question_is_answered_by_the_chat_prompt_not_the_router_text(fake_tool):
+    model = FakeModel([([], "I can help with lineups and trades.")], [["fantasy"], ["Great question. Buying young WRs is usually the dynasty move."]])
+    s = session(model)
+    s.ask("Should I buy or sell WRs in dynasty?")
+    out = s.out.getvalue()
+    assert out.startswith("Great question.") and "tool: none" in out and "I can help" not in out
+    assert model.options == llm.CHAT_OPTIONS
 
 
 def test_only_a_clarifying_exchange_reaches_the_router_next_turn(fake_tool):
@@ -129,7 +133,7 @@ def test_an_explain_question_never_reaches_the_router_and_sees_the_earlier_answe
 
 
 def test_a_bare_why_with_nothing_before_it_is_an_ordinary_question(explain_tools):
-    model = FakeModel([([], "I can help with lineups, trades and waivers.")])
+    model = FakeModel([([], "I can help with lineups and trades.")], [["fantasy"], ["Why what? Tell me more."]])
     s = session(model)
     s.ask("why?")
     assert len(model.seen) == 1 and explain_tools["topics"] == []
@@ -222,3 +226,16 @@ def test_the_lineup_answer_carries_the_caveat_that_is_true_for_it(monkeypatch):
         assert wanted in out
         assert (tools.DRAFT_CAVEAT in out) == (calibrated is None)
 
+
+
+def test_off_topic_marker_gets_the_canned_redirect(fake_tool):
+    s = session(FakeModel([([], "x")], [["other"]]))
+    turn = s.ask("What's the capital of France?")
+    out = s.out.getvalue()
+    assert "outside my lane" in out and "OFFTOPIC" not in out and turn.reply.startswith("That one's outside")
+
+
+def test_markdown_is_stripped_from_talk(fake_tool):
+    s = session(FakeModel([([], "x")], [["fantasy"], ["**Buy** young WRs."]]))
+    s.ask("strategy?")
+    assert "Buy young WRs." in s.out.getvalue() and "**" not in s.out.getvalue()

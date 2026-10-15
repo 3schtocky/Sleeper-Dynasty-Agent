@@ -33,6 +33,9 @@ KEEP_ALIVE = "30m"
 # Routing is a decision, not prose: temperature 0, the same answer every time.
 ROUTE_OPTIONS = {"num_ctx": 8192, "temperature": 0, "num_predict": 200}
 TAKE_OPTIONS = {"num_ctx": 8192, "temperature": 0.2, "num_predict": 160}
+# Free conversation: warmer and longer than a take.
+CHAT_OPTIONS = {"num_ctx": 8192, "temperature": 0.6, "num_predict": 400}
+TOPIC_OPTIONS = {"num_ctx": 2048, "temperature": 0, "num_predict": 4}
 # A walk through a calculation runs longer than a take; a cap of 160 cut one off mid-sentence in the first live test.
 EXPLAIN_OPTIONS = {"num_ctx": 8192, "temperature": 0.2, "num_predict": 420}
 # A reply that spent this long loading the model says "loading model..."

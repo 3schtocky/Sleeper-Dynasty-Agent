@@ -14,11 +14,12 @@ import json
 import shutil
 import sqlite3
 import sys
+import re
 import threading
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 
-from dynasty_agent import explain, grounding, llm, refresh, tools
+from dynasty_agent import explain, grounding, knowledge, llm, refresh, tools
 from dynasty_agent.errors import AgentError
 
 ROUTE_SYSTEM = (
@@ -28,6 +29,29 @@ ROUTE_SYSTEM = (
     "what the user gives away and receive is what the user gets: \"I'm offered X for Y\" means receive X, send Y. "
     "If the question is not about the user's fantasy team, reply in one short sentence without a tool and mention "
     "what you can help with: lineups, trades, team outlook, waiver pickups, draft picks, taxi and IR."
+)
+
+CHAT_SYSTEM = (
+    "You are a friendly, knowledgeable dynasty fantasy football assistant chatting with the user about their Sleeper "
+    "league. Talk like a person: warm and direct. Answer first in the opening sentence, then give the two or three "
+    "most useful reasons, in at most five sentences and one short paragraph. Never repeat a point or contradict the "
+    "reference. End with at most one short question, only when it would help. You can discuss anything fantasy football: strategy, rules, scoring, positions, dynasty philosophy, "
+    "buying and selling, how to think about a decision. You do not have live data in this reply, so never state a "
+    "specific player's stat, value, projection, injury or roster status, and never give a number you are not sure "
+    "of; if the user needs one, say you can check it for them and ask which player or question. Do not make a "
+    "trade, lineup or waiver recommendation about a named player without that check. If the user asks about "
+    "something that is not fantasy football, say so kindly in one sentence and steer back. Write plain text only: "
+    "no markdown, no bold, no headings, no bullet symbols, no emoji."
+)
+TOPIC_SYSTEM = (
+    "Classify the user's message with exactly one word. fantasy: about fantasy football or the NFL: players, "
+    "positions (QB, RB, WR, TE), rules and terms (flex, PPR, superflex, waivers, taxi, FAAB), aging, injuries, lineups, trades, drafts, picks, dynasty or strategy. When unsure "
+    "between fantasy and other, answer fantasy. smalltalk: a greeting, thanks or a goodbye. other: anything else, "
+    "including trivia, math, poems, geography and other sports. Reply with only the word."
+)
+OFF_TOPIC_REPLY = (
+    "That one's outside my lane. I'm here for your fantasy football team: lineups, trades, waivers, picks, "
+    "taxi and IR, or strategy talk. What would you like to dig into?"
 )
 
 TAKE_SYSTEM = (
@@ -120,6 +144,10 @@ def sentences(pieces: Iterable[str]) -> Iterator[str]:
         yield buffer.strip()
 
 
+# The model sometimes writes markdown anyway; a terminal shows it literally.
+_PLAIN = re.compile(r"\*+|__|`|^#+\s*", re.M)
+
+
 @dataclass
 class Turn:
     question: str
@@ -177,14 +205,7 @@ class ChatSession:
 
         calls, text, route_stats = self.client.route(self._router_messages(question), tools.TOOLS)
         if not calls:
-            reply = text.strip() or "I can help with lineups, trades, team outlook, waivers, draft picks, taxi and IR."
-            if grounding.ungrounded(reply, grounding.allowed_numbers(question)):
-                reply = "That's outside what I can answer from your league's data. Ask me about lineups, trades, waivers, picks or taxi."
-            turn.reply = reply
-            self.say(reply)
-            self._stats(route_stats, None)
-            self.history.append(turn)
-            return turn
+            return self._talk(turn)
         return self._answer(turn, calls[0], route_stats, recent)
 
     def _answer(self, turn: Turn, call: dict, route_stats: llm.Stats | None, recent: list[tools.ToolResult]) -> Turn:
@@ -229,6 +250,39 @@ class ChatSession:
         ]
         earlier = [r.numbers for r in recent] if explaining else []
         allowed = grounding.allowed_numbers(result.numbers, payload, question, *earlier)
+        shown, stats = self._stream_checked(messages, allowed, llm.EXPLAIN_OPTIONS if explaining else None)
+        self._stats(stats, call["name"])
+        return shown
+
+    def _talk(self, turn: Turn) -> Turn:
+        """No tool fits: chat about fantasy football in the model's own words.
+        Numbers still pass the grounding check: only the question's own
+        numbers and those in the vetted reference are allowed."""
+        if not self._on_topic(turn.question):
+            turn.reply = OFF_TOPIC_REPLY
+            self.say(OFF_TOPIC_REPLY)
+            self.history.append(turn)
+            return turn
+        reference = knowledge.reference(self.conn)
+        system = f"{CHAT_SYSTEM}\n\nReference (true; use it and never contradict it):\n{reference}"
+        messages = [{"role": "system", "content": system}, {"role": "user", "content": turn.question}]
+        reply, stats = self._stream_checked(messages, grounding.allowed_numbers(turn.question, reference), llm.CHAT_OPTIONS)
+        turn.reply = reply or "I can help with lineups, trades, team outlook, waivers, draft picks, taxi and IR."
+        if not reply:
+            self.say(turn.reply)
+        self._stats(stats, None)
+        self.history.append(turn)
+        return turn
+
+    def _on_topic(self, question: str) -> bool:
+        """A one-word model call, far more reliable on a 4B model than an
+        instruction buried in the chat prompt. Anything but "other" passes."""
+        messages = [{"role": "system", "content": TOPIC_SYSTEM}, {"role": "user", "content": question}]
+        text = "".join(e for e in self.client.stream(messages, options=llm.TOPIC_OPTIONS) if isinstance(e, str))
+        return "other" not in text.lower()
+
+    def _stream_checked(self, messages: list[dict], allowed: set[str], options: dict | None) -> tuple[str, llm.Stats | None]:
+        """Stream a reply one checked sentence at a time; stop at the first sentence quoting a number not in `allowed`."""
         stats: list[llm.Stats] = []
 
         def text_only(events):
@@ -239,8 +293,9 @@ class ChatSession:
                     yield event
 
         shown = []
-        stream = self.client.stream(messages, options=llm.EXPLAIN_OPTIONS if explaining else None)
+        stream = self.client.stream(messages, options=options)
         for sentence in sentences(text_only(stream)):
+            sentence = _PLAIN.sub("", sentence)
             bad = grounding.ungrounded(sentence, allowed)
             if bad:
                 self.say(self._dim(f"(The rest of the model's note quoted {', '.join(sorted(bad))}, which isn't in the "
@@ -252,8 +307,7 @@ class ChatSession:
             self.say(sentence, end=" ")
         if shown:
             self.say()
-        self._stats(stats[-1] if stats else None, call["name"])
-        return " ".join(shown)
+        return " ".join(shown), (stats[-1] if stats else None)
 
     def _stats(self, stats: llm.Stats | None, tool: str | None) -> None:
         if self.show_stats and stats is not None:
