@@ -26,7 +26,7 @@ import json
 import re
 import sqlite3
 
-from dynasty_agent import context, market, metrics, picks, valuation
+from dynasty_agent import context, formatters, market, metrics, picks, valuation
 
 POSITIONS = ("QB", "RB", "WR", "TE")
 MIN_OFFER_SHARE = 0.7      # an offer below 70% of his market value is not an offer
@@ -191,6 +191,12 @@ def find(conn: sqlite3.Connection, season: int, me: int, position: str | None = 
             "team_names": context.team_names(conn)}
 
 
+def _candidate_risk(idea: dict) -> dict | None:
+    """The injury-risk row for the player you would get, from the trade check."""
+    name = idea["candidate"]["name"]
+    return next((x for x in idea["checked"].get("risk", []) if x["name"] == name), None)
+
+
 def format_ideas(result: dict) -> str:
     pos, names = result["position"], result["team_names"]
     why = f"for {pos}" if result["chosen_by"] == "asked" else f"for {pos}, your biggest upgrade spot"
@@ -209,6 +215,9 @@ def format_ideas(result: dict) -> str:
         ]
         if chk["consolidation"]:
             lines.append(f"   Note: {chk['consolidation']}")
+        risk = _candidate_risk(idea)
+        if risk and risk["risk"]["label"] != "typical":
+            lines.append(f"   {formatters.risk_line(risk['name'], risk['risk'])}")
         lines.append("")
     lines.append("Market values are FantasyCalc trade-value points, not dollars. Lineup gain is win-now points per week.")
     return "\n".join(lines)
@@ -225,5 +234,7 @@ def compact(result: dict) -> dict:
             "lineup_gain": f"+{i['offer']['net']:.1f}",
             "net_market_value": f"{i['checked']['market_value_delta']:+.0f}",
             "they_would_say_yes": i["label"],
+            **({"injury_risk": formatters.risk_line(r["name"], r["risk"])}
+               if (r := _candidate_risk(i)) and r["risk"]["label"] != "typical" else {}),
         } for i in result["ideas"]],
     }

@@ -331,6 +331,43 @@ Run first on a scratch copy of the real database, then on the real one (backed u
 - A single slope under-corrects the 70-80% range a little (table above).
 - Refit after each season (`backfill-history` then `calibrate-matchup-model`). The fit is not part of `refresh`.
 
+## Injury availability (branch `conversational-chat`, 2026-10-14)
+
+Why: a trade for a player who missed 10 of 17 games last year read as a clear win, because nothing in the valuation discounted missed games (per-game means even flatter a player who sat half a season). Phase 1 measures what the data can actually say about availability. The discount in trade values is Phase 2.
+
+### Data checked before any definition was written
+- A missed week is an absent `weekly_stats` row, not a zero-point row. Of 2,732 skill-position "Out" designations in `nfl_injuries`, 1 has a stat row that week. Zero-point rows are players who played and did nothing.
+- `nfl_injuries` has Out, Doubtful and Questionable, or no status for a practice-only entry. Only Out and Doubtful mean "expected to miss". A player on IR stops appearing after the first week out, so a missed run is called an injury when the report shows Out or Doubtful anywhere in the run or in the calendar week before it. Everything else (benching, a late signing, a suspension) is counted separately: 18% of games, left out of the model.
+- 2026 injury reports had never been ingested; `refresh` now re-downloads them in season.
+- Known cases reproduce: Daniels 17 games in 2024 and 7 in 2025 (10 injury misses), Stafford 8 in 2019 and 9 in 2022.
+
+### What the data found
+- **Injury history barely predicts next season.** Season-to-season correlation of injury misses is r = 0.06 over 1,400 pairs. In a leak-free backtest (2020-2025, each season predicted from earlier ones only) one league-wide number scores RMSE 0.1556, position and age 0.1561, position plus age plus own history 0.1560. Position and age do not help out of sample, and the fitted history weight (kappa 400 games) is a heavy prior. This matches the published finding that injury history is a weak predictor. A player's long-run risk therefore rests on the league average (about 1.3 to 1.5 games per 17), and the tool says so.
+- **Recent misses and report status predict the next few games well.** A table of expected missed games by (injury misses in the last three team games, report status for the next game), built from 31,893 in-season cases, cuts held-out error (leave one season out) by 23% over the next 4 games and 11% over the next 8. Players who missed their last three games with an injury miss 2.5 of the next 4; healthy players miss 0.14.
+- Age bands: older WR and TE miss slightly more, older QB slightly fewer (survivors), all within noise.
+- Daniels today: missed 2 of his last 3, label elevated, 2.9 expected games missed per 17 against 1.1 for a healthy player. Stafford: typical, 1.1. Both read from the database, not typed in.
+
+### Decisions
+- Long-run risk is not a discount worth taking from history; Phase 2 applies the in-season status and recent-miss expectation, and the long-run share only where the model supports it.
+- Labels compare a player with a healthy one at the same point in the season (elevated at 1 or more extra expected games per 17, high at 3 or more); quartiles would mean nothing when 4 in 5 cases are healthy.
+- Sleeper's IR, PUP and NA have no weekly history; they are treated as a player who has already missed his last three games (a proxy), and every output that uses it says so. Sleeper gives no body part or timeline, which the output also says.
+- Scored on squared error, not absolute error: the goal is an expected number of games, and the best absolute-error guess is the median, near zero for everyone.
+
+### Built
+`availability.py`, migration `0010_availability.sql`, `fit-availability`, `refresh` ingests the current season's injury reports, 15 tests. Both leak guards were removed one at a time and the matching test failed: the backtest (`season < target`) and the lookback (the run of misses is cut at the cut point, so a flag posted later cannot turn an absence into an injury after the fact).
+
+### Phase 2 as built: risk shown, values untouched (2026-10-14, Ethan's call)
+- After the finding above Ethan chose to show the risk without discounting values and to let the user argue against the model. This replaces the plan's replacement-mix discount and 5% near-tie break; no value, verdict or ranking changes.
+- `evaluate_trade` returns a `risk` list; the trade printout, `player_check` card and trade-idea candidates print one risk line per player (idea candidates only when elevated or high) plus one footer saying the risk is not in the numbers, history barely predicts, and Sleeper gives no body part or timeline. The model sees the same lines in its facts and Python adds a point for any elevated or high player.
+- Live check, Stafford for Daniels: numbers unchanged (+3.4 win-now, +1421 market), Stafford typical 1.1, Daniels elevated 2.9 per 17 (healthy 1.1). Evals: routing 39 of 39, conversations 47 of 47, 564 tests.
+- Found live, for Phase 3: the 4B model upgraded "elevated" to "high", said "don't trade" and then "make the trade" for the same numbers in two turns, said "that history matters" against the footer, and answered "what about his injury risk?" by re-running the trade. Python needs to own the stance and the injury-question route.
+
+### Stated limits
+- Starter-level only (usage threshold by position); a lost season counts only when the player started the year before and the report shows 3 or more Out or Doubtful weeks.
+- The team of a missed week is the team of the nearest game he played; mid-season trades are rare for starters.
+- The status table is an in-sample conditional mean with 20 cells and 31,893 cases, checked by leave-one-season-out. Windows overlap, so the sample is smaller than the count suggests.
+- Whether FantasyCalc's market value already prices injury history is not tested yet (Phase 2).
+
 ## Staying current in season
 
 Found by asking "will this stay up to date?": it didn't. Nothing ran on its own, the 2026 season's stats sat un-ingested three weeks in, and ingesting them would have switched every value from 17 games of 2025 to 3 noisy games of 2026 in one step.

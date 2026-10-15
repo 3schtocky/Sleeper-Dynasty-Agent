@@ -78,7 +78,7 @@ dynasty-agent roster                         # sanity check: is this your team?
 dynasty-agent valuate                        # win-now/three-year value + the verdict
 ```
 
-First run on a new machine: `sync`, `ingest-nflverse --season <last completed season>`, `ingest-draft-data`, `ingest-college --season 2008 --through <current season>`, then `fit-prospect-model`; see the main README.
+First run on a new machine: `sync`, `ingest-nflverse --season <last completed season>`, `ingest-draft-data`, `ingest-college --season 2008 --through <current season>`, `fit-prospect-model`, `backfill-history`, `calibrate-matchup-model` and `fit-availability`; see the main README and the "Moving to a second machine" section below.
 
 **Daily refresh.** `dynasty-agent schedule` uses macOS's launchd and tells you so on Windows. The Windows equivalent is one Task Scheduler command, run once from the project folder (written from Microsoft's documented `schtasks` syntax, not yet run on a Windows machine for this project):
 
@@ -119,6 +119,7 @@ Everything reruns fresh against whatever's cached in the `data\` folder (git-ign
 dynasty-agent backfill-history               # past seasons' stats and injury reports, a few seconds a season
 dynasty-agent calibrate-matchup-model        # tests the heuristic and stores the correction
 dynasty-agent simulate-season                # playoff odds for every team
+dynasty-agent fit-availability               # expected games missed: history, recent misses, report status
 ```
 
 ## 6. Optional: talk to the agent (preview)
@@ -131,6 +132,20 @@ dynasty-agent chat
 ```
 
 Everything else about `chat` is the same as on macOS; see "Talk to the agent" in `README.md`. To watch requests arrive, Ollama's log is at `$env:LOCALAPPDATA\Ollama\server.log`.
+
+## Moving to a second machine (the Windows PC)
+
+Two ways to get the PC to the same state as the Mac. Both are safe to repeat.
+
+**A. Rebuild from the network (cleanest, a few minutes).** After step 4 (`init`), run in order: `dynasty-agent refresh`, `dynasty-agent backfill-history` (the 2017 to last-season stats and injury reports), `dynasty-agent calibrate-matchup-model`, `dynasty-agent fit-availability`. Nothing here is machine-specific: the database is rebuilt from Sleeper, FantasyCalc and nflverse.
+
+**B. Copy the data folder.** The database is one SQLite file and the downloads are plain parquet files, both identical on every OS. Copy the Mac's `data\dynasty.db` (and `data\nflverse\` if you want to skip the downloads) into the PC's project `data\` folder, run `dynasty-agent init --username <you>` for the PC's `.env`, then `dynasty-agent refresh` to bring it current. Do not copy `.env` between machines without checking it, and do not copy the Mac's `.venv`. The Mac backups folder is not part of the project.
+
+**Check the install.** From the activated venv, `pytest -q` should report every test passing (the suite reads no network and no Ollama). Then `dynasty-agent chat-eval` with Ollama running should route 39 of 39 questions, which is the gate any model must pass on this PC as well as on the Mac. A different GPU runs the same model faster, and the answers can differ slightly between hardware, so judge a new model by the eval, not by one chat.
+
+**What is Mac-only.** `dynasty-agent schedule` (launchd; use the `schtasks` line above) and the shell function that routes `chat` through a private logging wrapper, which lives in the Mac's `~/.zshrc` outside the project. Neither is needed for anything on the PC.
+
+**Model training stays a separate decision.** Nothing in this guide trains a model. The PC's GPU setup for a possible fine-tune is described in `PLANNING.md` when that phase starts; until then Ollama's own inference is the only GPU use.
 
 ## Troubleshooting
 

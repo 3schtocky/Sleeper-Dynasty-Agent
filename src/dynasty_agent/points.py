@@ -39,7 +39,31 @@ def _trade(c: dict) -> list[str]:
         pts.append(f"Note on roster fit: {c['consolidation']}")
     if c.get("fit"):
         pts.append(f"Fit with your team: {c['fit']}.")
+    risk = _risk_points(c.get("injury_risk"), "trade")
+    pts += risk
+    if risk:
+        # Python states the call, so the model neither says "make it" nor "don't" on numbers that are not in the risk
+        names = " and ".join(dict.fromkeys(x.split(":")[0] for x in risk[:-1]))
+        if value > 0 and win_now > 0:
+            pts.append(f"Bottom line: on the numbers this favors you, and the injury risk on {names} is the thing to weigh. "
+                       f"It is your call, not a clear yes or no.")
+        elif value < 0 and win_now < 0:
+            pts.append(f"Bottom line: the numbers favor the other team, and the injury risk on {names} does not help the case for it.")
+        else:
+            pts.append(f"Bottom line: a close call on the numbers, so the injury risk on {names} is worth weighing. It is your call.")
     return pts
+
+
+def _risk_points(lines: list[str] | str | None, what: str) -> list[str]:
+    """Points for any player whose injury risk is elevated or high. A typical
+    player adds nothing. The risk is beside the numbers, never in them, and
+    the point says so."""
+    if isinstance(lines, str):
+        lines = [lines]
+    flagged = [x for x in lines or [] if " elevated injury risk" in x or " high injury risk" in x]
+    if not flagged:
+        return []
+    return flagged + [f"That injury risk is not in the numbers for this {what}, so weigh it yourself."]
 
 
 def _lineup(c: dict) -> list[str]:
@@ -111,6 +135,8 @@ def _ideas(c: dict) -> list[str]:
     for i, idea in enumerate(c["ideas"], 1):
         pts.append(f"Idea {i}: get {idea['get']} for {idea['give']}. It lifts your lineup {idea['lineup_gain']} points per week, "
                    f"and the other side would likely say: {idea['they_would_say_yes']}.")
+    for i, idea in enumerate(c["ideas"], 1):
+        pts += [f"Idea {i}: {x}" for x in _risk_points(idea.get("injury_risk"), "idea")]
     pts.append("These are offers to send the other manager, not trades you can just make, and they may say no. A lowball "
                "is only an opening bid.")
     return pts
@@ -132,6 +158,7 @@ def _player(c: dict) -> list[str]:
     if "lineup_gain" in c:
         pts.append("He would not start for you." if c["lineup_gain"].startswith("none")
                    else f"Adding him would lift your best lineup {c['lineup_gain']} points per week.")
+    pts += _risk_points(c.get("injury_risk"), "player")
     pts.append("The buy or sell read compares price with this season's production, it is not a forecast.")
     return pts
 

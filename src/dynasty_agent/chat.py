@@ -19,7 +19,7 @@ import threading
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 
-from dynasty_agent import explain, grounding, knowledge, llm, refresh, tools
+from dynasty_agent import explain, grounding, knowledge, llm, player_check, refresh, risk_talk, tools
 from dynasty_agent.errors import AgentError
 
 ROUTE_SYSTEM = (
@@ -68,7 +68,8 @@ TAKE_SYSTEM = (
     "never mention a player or pick they don't name. Trade-value points are not dollars; a bid is what you pay, "
     "not what a player is worth. Recommend a move (a trade, a pickup, a taxi or IR move) only when the facts "
     "clearly support it; if they are close, mixed or unclear, say so plainly. Only when you recommend making a move, add that the user "
-    "makes it in the Sleeper app. Do not ask questions. No markdown, lists or emoji."
+    "makes it in the Sleeper app. If a fact starts with Bottom line, make it your direct answer in your own words and do "
+    "not tell the user to make the trade or not to make it. Do not ask questions. No markdown, lists or emoji."
 )
 
 EXPLAIN_SYSTEM = (
@@ -90,6 +91,7 @@ HELP = """Ask in plain English, for example:
   Should I trade Jonah Coleman and my 2028 2nd for a 2027 1st?
   Am I a contender?        Who should I pick up?        How much should I bid on Trey Benson?
   Should I sell my first?  Anyone I should put on taxi?
+  What about his injury risk?     Daniels just got hurt (I'll ask how many games and use your answer)
 Ask how it works, too:
   How did you get Trey Benson's win-now value?     Why is his 3yr lower?     What is situation score?
   Why? (after a trade)     How is that win probability calculated?     How did you size that bid?
@@ -190,6 +192,10 @@ class ChatSession:
         self.show_stats = True
         self.history: list[Turn] = []
         self.last_dropped: list[str] = []
+        # Injuries the user reported: {sleeper player_id: games out}, their word and never data. And the players a
+        # question about games missed is waiting on, so the next message ("about 6 games") reads as the answer.
+        self.overrides: dict[str, int] = {}
+        self.pending_games: list[str] = []
 
     def say(self, text: str = "", end: str = "\n") -> None:
         self.out.write(text + end)
@@ -231,7 +237,12 @@ class ChatSession:
             topic = f"{last.question} {question}" if answering_explain_question else question
             return self._answer(turn, {"name": tools.EXPLAIN, "arguments": {"topic": topic}}, None, recent)
 
-        action = tools.detect_action(self.conn, question)
+        if self.pending_games:
+            games, ids, self.pending_games = risk_talk.games_out_in(question), self.pending_games, []
+            if games is not None:
+                return self._answer(turn, {"name": tools.RISK_CHECK, "arguments": {"player_ids": ids, "games_out": games}},
+                                    None, recent)
+        action = tools.detect_action(self.conn, question, recent, last.tool if last and not last.clarification else None)
         if action is None and _FOLLOW_UP.search(question):
             earlier = next((t for t in reversed(self.history[-FOLLOW_UP_TURNS:]) if t.tool and not t.clarification), None)
             action = tools.detect_follow_up(self.conn, question, earlier.tool) if earlier else None
@@ -251,7 +262,14 @@ class ChatSession:
     def _answer(self, turn: Turn, call: dict, route_stats: llm.Stats | None, recent: list[tools.ToolResult]) -> Turn:
         question = turn.question
         turn.tool, turn.arguments = call["name"], call["arguments"]
-        result = tools.run_tool(self.conn, call["name"], call["arguments"], recent=recent)
+        args = call["arguments"]
+        if call["name"] == tools.RISK_CHECK and args.get("games_out") is not None:
+            self.overrides.update({pid: args["games_out"] for pid in args.get("player_ids", [])})
+        result = tools.run_tool(self.conn, call["name"], args, recent=recent, overrides=self.overrides)
+        if call["name"] == tools.RISK_CHECK and result.clarification and args.get("report"):
+            self.pending_games = list(args.get("player_ids", []))
+        if call["name"] == tools.PUSHBACK and result.data:
+            self.pending_games = list(result.data.get("asked", []))
         if result.clarification:
             turn.reply, turn.clarification = result.clarification, True
             self.say(result.clarification)
@@ -290,7 +308,12 @@ class ChatSession:
         ]
         earlier = [r.numbers for r in recent] if explaining else []
         allowed = grounding.allowed_numbers(result.numbers, payload, question, *earlier)
-        shown, stats = self._stream_checked(messages, allowed, llm.EXPLAIN_OPTIONS if explaining else None)
+        facts = " ".join(result.compact.get("facts", []))
+
+        def check(sentence: str, ok: set[str]) -> set[str]:
+            return grounding.ungrounded(sentence, ok) or set(risk_talk.contradicts(sentence, facts))
+
+        shown, stats = self._stream_checked(messages, allowed, llm.EXPLAIN_OPTIONS if explaining else None, check=check)
         self._stats(stats, call["name"])
         return shown
 
@@ -326,10 +349,7 @@ class ChatSession:
         """True when the question contains the full name of a skill-position player in the database."""
         if self.conn is None:
             return False
-        row = self.conn.execute(
-            "SELECT 1 FROM players WHERE position IN ('QB','RB','WR','TE') AND length(full_name) > 6 "
-            "AND ? LIKE '%' || lower(full_name) || '%' LIMIT 1", (question.lower(),)).fetchone()
-        return row is not None
+        return bool(player_check.named_player_ids(self.conn, question))
 
     def _on_topic(self, question: str, previous: str | None = None) -> bool:
         """A one-word model call, far more reliable on a 4B model than an
@@ -362,7 +382,8 @@ class ChatSession:
             bad = check(sentence, allowed)
             if bad:
                 # Skip just this sentence; the rest may be fine. The user sees nothing about it, /raw lists it.
-                self.last_dropped.append(f"{sentence.strip()} [numbers not allowed: {', '.join(sorted(bad))}]")
+                kind = "numbers not allowed" if all(re.search(r"\d", b) for b in bad) else "contradicts the facts"
+                self.last_dropped.append(f"{sentence.strip()} [{kind}: {', '.join(sorted(bad))}]")
                 continue
             shown.append(sentence)
             self.say(sentence, end=" ")
@@ -420,7 +441,7 @@ def run(conn: sqlite3.Connection, do_refresh: bool = True) -> None:
     except ImportError:
         pass
     session = ChatSession(conn, client)
-    print(f"\nTalking to {client.model} on this Mac. Ask about your league; /help for examples, /quit to leave.\n")
+    print(f"\nTalking to {client.model} on this machine. Ask about your league; /help for examples, /quit to leave.\n")
     while True:
         try:
             line = input("you> ").strip()

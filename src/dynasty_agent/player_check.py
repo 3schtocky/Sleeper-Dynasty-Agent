@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 import sqlite3
 
-from dynasty_agent import context, explain, market, valuation, weekly
+from dynasty_agent import availability, context, explain, formatters, market, valuation, weekly
 
 LEAN_GAP = 0.15  # percentile-rank difference that counts as a real gap between production and price
 
@@ -35,10 +35,23 @@ def detect(conn: sqlite3.Connection | None, question: str, follow_up: bool = Fal
     A follow-up to an earlier player check ("what about Rashee Rice?") needs no asking-word."""
     if conn is None or _OTHER_TOOL.search(question) or not (follow_up or _ASKS_ABOUT.search(question)):
         return None
-    rows = conn.execute(
-        "SELECT DISTINCT player_id FROM players WHERE position IN ('QB','RB','WR','TE') AND length(full_name) > 6 "
-        "AND ? LIKE '%' || lower(full_name) || '%'", (question.lower(),)).fetchall()
-    return {"player_id": rows[0][0]} if len(rows) == 1 else None
+    ids = named_player_ids(conn, question)
+    return {"player_id": ids[0]} if len(ids) == 1 else None
+
+
+def named_player_ids(conn: sqlite3.Connection, text: str) -> list[str]:
+    """Ids of the skill-position players whose full name appears in the text,
+    also under a first-name short form ("Matt Stafford")."""
+    ids: list[str] = []
+    for variant in valuation.name_variants(text):
+        for (pid,) in conn.execute(
+            "SELECT DISTINCT player_id FROM players WHERE position IN ('QB','RB','WR','TE') AND length(full_name) > 6 "
+            "AND ? LIKE '%' || lower(full_name) || '%'", (variant,)):
+            if pid not in ids:
+                ids.append(pid)
+        if ids:
+            break
+    return ids
 
 
 def _rank(value: float, values: list[float]) -> float:
@@ -67,6 +80,9 @@ def card(conn: sqlite3.Connection, season: int, me: int, player_id: str) -> dict
         price = _rank(out["market"], [market.latest_value(conn, pid) for pid, _ in peers])
         out["production_rank"], out["price_rank"] = prod, price
         out["lean"] = "buy" if prod - price >= LEAN_GAP else "sell" if price - prod >= LEAN_GAP else "fair"
+    risk = availability.risk_rows(conn, [(player_id, info["full_name"])])
+    if risk:
+        out["risk"] = risk[0]
     if not out["mine"]:
         out["lineup_gain"] = weekly.lineup_gains(conn, valuations, me, [player_id])[player_id]
     return out
@@ -89,6 +105,8 @@ def format_card(c: dict) -> str:
     elif c["slot"]:
         lines.append(f"He is in your {c['slot']} group.")
     lines.append("The lean compares price with this season's production in this league; it is not a forecast.")
+    if "risk" in c:
+        lines += ["", *formatters.risk_block([c["risk"]])]
     return "\n".join(lines)
 
 
@@ -109,6 +127,9 @@ def compact(c: dict) -> dict:
                     "games": c["games"]})
     if "lean" in c:
         out["lean"] = c["lean"]
+    if "risk" in c:
+        out["injury_risk"] = formatters.risk_line(c["risk"]["name"], c["risk"]["risk"])
+        out["injury_risk_label"] = c["risk"]["risk"]["label"]
     if "lineup_gain" in c:
         out["lineup_gain"] = f"+{c['lineup_gain']:.1f}" if c["lineup_gain"] > 0 else "none, would not start"
     return out

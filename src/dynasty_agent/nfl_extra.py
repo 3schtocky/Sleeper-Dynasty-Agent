@@ -39,10 +39,11 @@ def injuries_path(season: int, force: bool = False) -> Path:
     return nflverse.download(f"{nflverse.RELEASE_BASE}/injuries/injuries_{season}.parquet", dest)
 
 
-def ingest_injuries(conn: sqlite3.Connection, season: int) -> int:
+def ingest_injuries(conn: sqlite3.Connection, season: int, force: bool = False) -> int:
     """Cache and upsert one season's real weekly injury designations into
-    nfl_injuries. Returns row count."""
-    path = injuries_path(season)
+    nfl_injuries. force re-downloads (nflverse updates the current season in
+    place). Returns row count."""
+    path = injuries_path(season, force=force)
     con = duckdb.connect()
     try:
         rows = con.execute(

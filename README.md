@@ -27,6 +27,7 @@ It is built for **one specific league shape**: 12 teams, 1QB, full PPR, no TE pr
 - **`taxi`**: which players to move to taxi or IR right now to free bench spots, and whether next year's rookie draft forces a cut, every rule read from your league's settings.
 - **`calibrate-blend`**: reruns the backtest behind how much last season counts this season (see below).
 - **`backfill-history`**: loads past seasons' weekly stats and real injury reports (about 20 MB of play-by-play per season, a few seconds each), the history the next command needs. Skips seasons already loaded.
+- **`fit-availability`**: fits how many games a QB, RB, WR or TE is expected to miss, from past seasons' real injury reports and games played. It found that a player's injury history predicts his next season barely at all (season-to-season r of about 0.06), whereas his recent misses and current report status predict the next few games well (23% lower error over the next 4 games on held-out seasons). Run it after `backfill-history`, and again after each season. Trade evaluations, player checks and trade ideas print each player's risk beside the numbers (label, expected games missed per 17, reasons). It is shown, never subtracted: no value, verdict or ranking changes because of it.
 - **`calibrate-matchup-model`**: tests the win-probability heuristic against about 2,100 real NFL games and fits a correction for its overconfidence. Every win probability the tool prints (`optimize-lineup`, `predict-matchup`, `digest`, `simulate-season` and the chat) then shows the corrected number with the raw one beside it.
 - **`simulate-season`**: simulates the rest of the regular season 10,000 times from your league's real remaining schedule: each team's playoff odds, average final wins and rank, and last-place odds.
 - **`chat`** *(preview)*: ask about your league in plain English, answered by an open-source model running on your own machine. See "Talk to the agent" below.
@@ -72,7 +73,7 @@ dynasty-agent valuate                        # win-now/three-year value + the ve
 dynasty-agent schedule --install             # optional, macOS: run refresh daily at 06:00 (--at to change)
 ```
 
-First run on a new machine, before `refresh` has anything to build on: `sync`, then `ingest-nflverse --season <last completed season>`, `ingest-draft-data`, `ingest-college --season 2008 --through <current season>`, `fit-prospect-model`, `backfill-history` and `calibrate-matchup-model`. After that, `refresh` keeps it all current. Each ingest command still works on its own; `ingest-nflverse` re-downloads the current season automatically and takes `--force` for any other.
+First run on a new machine, before `refresh` has anything to build on: `sync`, then `ingest-nflverse --season <last completed season>`, `ingest-draft-data`, `ingest-college --season 2008 --through <current season>`, `fit-prospect-model`, `backfill-history`, `calibrate-matchup-model` and `fit-availability`. After that, `refresh` keeps it all current. Each ingest command still works on its own; `ingest-nflverse` re-downloads the current season automatically and takes `--force` for any other.
 
 Evaluate a trade, players by name or Sleeper `player_id`, picks written any common way (`2027-1`, `"2027 1st"`, `"2027 early 1st"`, `"2027 1.05"`; a tier or slot gets FantasyCalc's tiered price):
 
@@ -124,6 +125,7 @@ The win probability behind `optimize-lineup`, `digest` and `predict-matchup` sta
 ```
 dynasty-agent backfill-history               # past seasons' stats and injury reports (skips seasons already loaded)
 dynasty-agent calibrate-matchup-model        # tests the heuristic and stores the correction
+dynasty-agent fit-availability               # injury availability: history, recent misses, report status
 ```
 
 From then on every win probability reads like `Win probability: 48.8%  (raw heuristic 46.7%, ...)`: the corrected number, with the raw one beside it. Before the first fit, the raw number is shown with a note saying so. Then:

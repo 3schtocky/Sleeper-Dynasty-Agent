@@ -18,7 +18,7 @@ import re
 import sqlite3
 from dataclasses import dataclass, field
 
-from dynasty_agent import context, explain, formatters, picks, player_check, points, taxi, trade_finder, valuation, weekly
+from dynasty_agent import availability, context, explain, formatters, picks, player_check, points, risk_talk, taxi, trade_finder, valuation, weekly
 from dynasty_agent.valuation import AmbiguousPlayer, PlayerNotFound
 
 _LIST = {"type": "array", "items": {"type": "string"}}
@@ -63,6 +63,10 @@ TOOL_NAMES = [t["function"]["name"] for t in TOOLS]
 # bake-off questions, so Python recognizes an explain question itself (explain.detect) and calls this.
 FIND_TRADES = "find_trades"
 PLAYER_CHECK = "player_check"
+RISK_CHECK = "risk_check"
+# Answers that continue a trade conversation, so "I disagree" after them still means the trade.
+TRADE_CONVERSATION = ("evaluate_trade", "risk_check", "pushback")
+PUSHBACK = "pushback"
 EXPLAIN = "explain"
 
 # What a win probability or projection here is, carried into every answer
@@ -143,30 +147,67 @@ def _blank_if_none(value) -> str:
     return "" if text.lower() in ("none", "null", "n/a", "na", "any", "all") else text
 
 
+MAX_CANDIDATES_SHOWN = 5
+
+
 def _clarify(e: ValueError) -> str:
     if isinstance(e, AmbiguousPlayer):
-        options = [f"{c['full_name']} ({c['position']} {c['team'] or 'FA'})" for c in e.candidates]
-        return f"Which {e.query} do you mean: " + ", ".join(options[:-1]) + (" or " if len(options) > 1 else "") + options[-1] + "?"
+        # rostered and NFL-team players come first, so the first few are the likely ones
+        options = [f"{c['full_name']} ({c['position']} {c['team'] or 'FA'})" for c in e.candidates[:MAX_CANDIDATES_SHOWN]]
+        more = " (or someone else, give me the full name)" if len(e.candidates) > MAX_CANDIDATES_SHOWN else ""
+        return f"Which {e.query} do you mean: " + ", ".join(options[:-1]) + (" or " if len(options) > 1 else "") + options[-1] + "?" + more
     if isinstance(e, PlayerNotFound):
         return f"{e} Check the spelling, or give the full name?"
     return str(e)
 
 
-def run_tool(conn: sqlite3.Connection, name: str, args: dict | None, recent: list[ToolResult] | None = None) -> ToolResult:
+def _resolve_in_context(conn, args: dict, recent: list[ToolResult]) -> dict:
+    """A surname that matches several players but exactly one already under
+    discussion means that player ("Daniels" in a chat about Jayden Daniels)."""
+    known: dict[str, str] = {}
+    for r in recent:
+        _players_in(r.data, known)
+    if not known:
+        return args
+
+    def fix(name):
+        if not isinstance(name, str):
+            return name
+        try:
+            valuation.resolve_player(conn, name)
+        except AmbiguousPlayer as e:
+            fits = [c["player_id"] for c in e.candidates if c["player_id"] in known]
+            return fits[0] if len(fits) == 1 else name
+        except PlayerNotFound:
+            pass
+        return name
+
+    out = dict(args)
+    for key in ("send_players", "receive_players", "player"):
+        if key in out and out[key]:
+            out[key] = [fix(n) for n in out[key]] if isinstance(out[key], list) else fix(out[key])
+    return out
+
+
+def run_tool(conn: sqlite3.Connection, name: str, args: dict | None, recent: list[ToolResult] | None = None,
+             overrides: dict[str, int] | None = None) -> ToolResult:
     """Run one tool on the real league. Raises AgentError for setup
     problems (no sync, no stats); returns a clarification for a question
     the user has to answer (which player, which pick). recent is the last
     few results in this chat, oldest first, which explain reads to find what
     "that" refers to."""
-    args = args or {}
-    if name not in TOOL_NAMES and name not in (EXPLAIN, FIND_TRADES, PLAYER_CHECK):
+    args = _resolve_in_context(conn, args or {}, recent or [])
+    if name not in TOOL_NAMES and name not in (EXPLAIN, FIND_TRADES, PLAYER_CHECK, RISK_CHECK, PUSHBACK):
         return ToolResult(name, clarification=f"I don't have a tool called {name}.")
     me = context.my_roster_id(conn)
     season = context.stats_season(conn)
     try:
         if name == EXPLAIN:
             return _explain(conn, me, season, args, recent or [])
-        result = _RUNNERS[name](conn, me, season, args)
+        if name == PUSHBACK:
+            return _pushback(recent or [])
+        with availability.assumptions(overrides):
+            result = _RUNNERS[name](conn, me, season, args)
         if not result.clarification and result.take:
             result.compact["facts"] = points.build(name, result.compact, result.data)
         return result
@@ -259,6 +300,9 @@ def _evaluate_trade(conn, me, season, args) -> ToolResult:
         "fit": r["fit"],
         "consolidation": r["consolidation"],
         "warnings": r["warnings"],
+        **({"injury_risk": [formatters.risk_line(x["name"], x["risk"]) for x in r["risk"]],
+            "injury_risk_note": "shown beside the numbers, not included in them; history barely predicts next season"}
+           if r["risk"] else {}),
         "units": "market values are FantasyCalc trade-value points, not dollars; win-now is points per game",
     }
     return ToolResult("evaluate_trade", formatters.format_trade(r, season), compact, data=r)
@@ -359,6 +403,35 @@ def _player_check(conn, me, season, args) -> ToolResult:
     return ToolResult("player_check", player_check.format_card(c), player_check.compact(c), data=c)
 
 
+def _risk_check(conn, me, season, args) -> ToolResult:
+    ids = args.get("player_ids") or []
+    names = {r[0]: r[1] for r in conn.execute(
+        f"SELECT player_id, full_name FROM players WHERE player_id IN ({','.join('?' * len(ids))})", ids)} if ids else {}
+    if args.get("report") and args.get("games_out") is None and names:
+        return ToolResult(RISK_CHECK, clarification=risk_talk.report_question(next(iter(names.values()))))
+    rows = availability.risk_rows(conn, [(i, names.get(i, i)) for i in ids])
+    if not rows:
+        return ToolResult(RISK_CHECK, clarification="I don't have an injury read for that player. It covers quarterbacks, "
+                          "running backs, wide receivers and tight ends, and needs `dynasty-agent fit-availability` run once.")
+    assumed = [f"You told me {x['name']} is out about {x['risk']['assumed_games_out']} games; that is your assumption and I "
+               f"can't verify it." if x["risk"]["assumed_games_out"] < x["risk"]["games_left"] else
+               f"You told me {x['name']} is out for the season; that is your assumption and I can't verify it."
+               for x in rows if x["risk"].get("assumed_games_out") is not None]
+    compact = {"injury_risk": [formatters.risk_line(x["name"], x["risk"]) for x in rows],
+               **({"assumed": assumed} if assumed else {})}
+    # Python's text is the whole answer: a model's retelling added "low" for typical and an invented "inconsistency"
+    return ToolResult(RISK_CHECK, "\n".join(formatters.risk_block(rows) + assumed), compact, take=False, data={"players": [
+        {"player_id": i, "full_name": n} for i, n in names.items()]})
+
+
+def _pushback(recent: list[ToolResult]) -> ToolResult:
+    _kind, trade = _latest(recent, "trade")
+    if trade is None or not isinstance(trade.data, dict) or "received" not in trade.data:
+        return ToolResult(PUSHBACK, clarification="Which trade do you mean? Tell me what you'd send and get and I'll run it.")
+    text, asked = risk_talk.pushback_reply(trade.data)
+    return ToolResult(PUSHBACK, numbers=text, compact={"stance": text}, take=False, data={"asked": asked})
+
+
 def detect_follow_up(conn, question: str, earlier_tool: str) -> dict | None:
     """A follow-up to a trade-idea or player-check answer that Python can finish itself: another position, another player."""
     if earlier_tool == FIND_TRADES and (position := trade_finder.position_in(question)):
@@ -368,9 +441,27 @@ def detect_follow_up(conn, question: str, earlier_tool: str) -> dict | None:
     return None
 
 
-def detect_action(conn, question: str) -> dict | None:
-    """A question Python recognizes without the model: a call dict for the trade finder or a player check, else None.
-    Like explain, these stay out of the model's tool list, because a seventh option cost routing accuracy."""
+def detect_action(conn, question: str, recent: list[ToolResult] | None = None, last_tool: str | None = None) -> dict | None:
+    """A question Python recognizes without the model: a call dict for the trade finder, a player check, an injury
+    question or report, or pushback on a trade verdict, else None. Like explain, these stay out of the model's tool
+    list, because a seventh option cost routing accuracy. recent is the last few results (who is under discussion);
+    last_tool is the tool of the previous answer, which pushback needs."""
+    known: dict[str, str] = {}
+    for r in recent or []:
+        _players_in(r.data, known)
+    if conn is None:  # a chat with no database (tests of the plumbing) has no players to find
+        pass
+    elif risk_talk.is_report(question):
+        found = risk_talk.players_for(conn, question, known)
+        if found:
+            return {"name": RISK_CHECK, "arguments": {"player_ids": [i for i, _ in found], "report": True,
+                                                      "games_out": risk_talk.games_out_in(question)}}
+    elif risk_talk.is_risk_question(question):
+        found = risk_talk.players_for(conn, question, known)
+        if found:
+            return {"name": RISK_CHECK, "arguments": {"player_ids": [i for i, _ in found]}}
+    if last_tool in TRADE_CONVERSATION and _latest(recent or [], "trade")[1] is not None and risk_talk.is_pushback(question):
+        return {"name": PUSHBACK, "arguments": {}}
     args = trade_finder.detect(question)
     if args is not None:
         return {"name": FIND_TRADES, "arguments": args}
@@ -638,4 +729,5 @@ _RUNNERS = {
     "taxi_plan": _taxi_plan,
     FIND_TRADES: _find_trades,
     PLAYER_CHECK: _player_check,
+    RISK_CHECK: _risk_check,
 }

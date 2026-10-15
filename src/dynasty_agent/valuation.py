@@ -17,6 +17,7 @@ mean something. That is stated in every result, not left implicit.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 
 import duckdb
@@ -422,7 +423,40 @@ def _league_positions(conn: sqlite3.Connection) -> set[str]:
     return positions
 
 
-def resolve_player(conn: sqlite3.Connection, name_or_id: str) -> dict:
+# Common first-name short forms and the full names they stand for. A fallback
+# tier only: an exact or partial match on the name as typed always wins, so
+# "Chris Godwin" still finds Chris Godwin, and "Matt Stafford" falls back to
+# "Matthew Stafford" when nothing matches as typed.
+NICKNAMES: dict[str, tuple[str, ...]] = {
+    "matt": ("matthew",), "mike": ("michael",), "chris": ("christopher",), "josh": ("joshua",),
+    "nick": ("nicholas",), "tom": ("thomas",), "tony": ("anthony",), "dan": ("daniel",), "danny": ("daniel",),
+    "jim": ("james",), "jimmy": ("james",), "joe": ("joseph",), "will": ("william",), "bill": ("william",),
+    "billy": ("william",), "bob": ("robert",), "rob": ("robert",), "bobby": ("robert",), "ben": ("benjamin",),
+    "sam": ("samuel",), "alex": ("alexander", "alexis"), "andy": ("andrew",), "drew": ("andrew",),
+    "jake": ("jacob",), "jack": ("john",), "johnny": ("john",), "zach": ("zachary",), "zack": ("zachary",),
+    "tim": ("timothy",), "ted": ("theodore",), "ed": ("edward",), "eddie": ("edward",), "rick": ("richard",),
+    "rich": ("richard",), "dave": ("david",), "steve": ("steven", "stephen"), "pat": ("patrick",),
+    "pete": ("peter",), "jon": ("jonathan",), "ken": ("kenneth",), "kenny": ("kenneth",), "gabe": ("gabriel",),
+    "cam": ("cameron",), "ray": ("raymond",), "drake": ("drake",), "trey": ("trey",),
+}
+
+
+def name_variants(text: str) -> list[str]:
+    """The text as typed first, then the same text with each first-name short
+    form swapped for its full name and each full name for its short forms
+    ("matt stafford" -> "matthew stafford")."""
+    text = text.lower()
+    out = [text]
+    pairs = [(short, full) for short, fulls in NICKNAMES.items() for full in fulls if short != full]
+    pairs += [(full, short) for short, full in pairs]
+    for old, new in pairs:
+        swapped = re.sub(rf"\b{re.escape(old)}\b", new, text)
+        if swapped != text and swapped not in out:
+            out.append(swapped)
+    return out
+
+
+def resolve_player(conn: sqlite3.Connection, name_or_id: str, _nicknames: bool = True) -> dict:
     """Resolve a player name or a literal Sleeper player_id to a row from
     the players table. Raises PlayerNotFound or AmbiguousPlayer (both
     ValueErrors) rather than silently guessing which player was meant.
@@ -471,6 +505,12 @@ def resolve_player(conn: sqlite3.Connection, name_or_id: str) -> dict:
         found = pick([p for p in players if padded in f" {normalize_name(p['full_name'])} "])
     if found is None:
         found = pick([p for p in players if wanted in normalize_name(p["full_name"])])
+    if found is None and _nicknames:
+        for alt in name_variants(query)[1:]:
+            try:
+                return resolve_player(conn, alt, _nicknames=False)
+            except PlayerNotFound:
+                continue
     if found is None:
         raise PlayerNotFound(f"No player found matching '{query}'.")
     return found
@@ -628,9 +668,15 @@ def evaluate_trade(
     elif received["asset_count"] >= 2 and sent["asset_count"] == 1:
         consolidation = "deconsolidation: one piece for multiple. Generally works against you unless every piece coming back is startable."
 
+    # Injury risk rides beside the numbers and changes none of them. Imported
+    # here because availability reaches valuation through calibration.
+    from dynasty_agent import availability
+    risk = availability.risk_rows(conn, [(p["player_id"], p["full_name"]) for p in sent["players"] + received["players"]])
+
     return {
         "sent": sent,
         "received": received,
+        "risk": risk,
         "win_now_delta": win_now_delta,
         "player_three_year_delta": player_three_year_delta,
         "market_value_delta": market_value_delta,

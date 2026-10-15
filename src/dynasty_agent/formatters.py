@@ -5,7 +5,7 @@ or the network, so the CLI and the chat print from one path."""
 
 from __future__ import annotations
 
-from dynasty_agent import blend, picks, prospect_model
+from dynasty_agent import availability, blend, picks, prospect_model
 from dynasty_agent.explain import ordinal
 
 ROOKIE_FOOTNOTE = (
@@ -197,6 +197,8 @@ def format_trade(result: dict, season: int) -> str:
     out.append(f"Fit: {result['fit']}")
     if result["consolidation"]:
         out.append(f"Note: {result['consolidation']}")
+    if result.get("risk"):
+        out += ["", *risk_block(result["risk"])]
     return "\n".join(out)
 
 
@@ -423,3 +425,73 @@ def format_taxi(result: dict) -> str:
     else:
         out.append("  No crunch: everyone fits, before any waiver adds between now and then.")
     return "\n".join(out)
+
+
+def format_availability_fit(r: dict) -> str:
+    """The fit-availability report: what was measured, how well history and
+    status predict, and what that means for the numbers shown elsewhere."""
+    bt, hold, per = r["history_backtest"], r["status_holdout"], r["persistence"]
+    out = [
+        f"Fitted availability on {r['sample_size']} starter-level QB/RB/WR/TE player-seasons, "
+        f"{r['start_season']}-{r['end_season']}, and {r['status_cases']:,} in-season cases.",
+        "",
+        "1. Does a player's injury history predict his next season? (held out: each season predicted from earlier ones only)",
+        f"   {'Predictor':<34} {'RMSE':>7}   (share of games missed to injury; lower is better)",
+        f"   {'One league-wide number':<34} {bt['league']['all']['rmse']:>7.4f}",
+        f"   {'Position and age':<34} {bt['prior']['all']['rmse']:>7.4f}",
+        f"   {'Position, age and own history':<34} {bt['model']['all']['rmse']:>7.4f}"
+        f"   (kappa {r['kappa']:g}, yearly decay {r['lambda']:g})",
+    ]
+    gain = 1 - bt["model"]["all"]["rmse"] / bt["league"]["all"]["rmse"]
+    r_txt = f"{per['r']:.2f}" if per["r"] is not None else "n/a"
+    out.append(
+        f"   Season-to-season correlation of injury misses: r = {r_txt} over {per['n']:,} pairs. "
+        + ("Injury history adds nothing measurable beyond the league average, so a player's long-run risk "
+           "here rests on the average, not on his past."
+           if gain < 0.01 else f"History improves the forecast by {gain:.1%}.")
+    )
+    out += ["", "2. Do a player's recent misses and report status predict the next games? (leave-one-season-out)",
+            f"   {'Next games':<12} {'No information':>15} {'With status table':>18}"]
+    for R in ("4", "8"):
+        h = hold[R]
+        out.append(f"   {R + ' games':<12} {h['rmse_baseline']:>15.3f} {h['rmse_model']:>18.3f}"
+                   f"   ({1 - h['rmse_model'] / h['rmse_baseline']:.0%} better)")
+    t = r["status_table"]
+    out += ["", "   Expected games missed in the next 4 (the table the answers use):",
+            f"   {'Missed of last 3':<18} {'Healthy':>8} {'Questionable':>13} {'Doubtful':>9} {'Out':>6}"]
+    for recent in range(4):
+        cells = [t.get(f"{recent}|{s}", {}).get("4") for s in ("none", "Questionable", "Doubtful", "Out")]
+        out.append(f"   {recent:<18} " + " ".join(f"{c:>{w}.2f}" if c is not None else f"{'-':>{w}}"
+                                                  for c, w in zip(cells, (8, 13, 9, 6))))
+    out += ["",
+            f"Labels: elevated at {availability.ELEVATED_EXCESS:g} or more extra expected games missed per 17 than a "
+            f"healthy player at the same point in the season, high at {availability.HIGH_EXCESS:g} or more.",
+            f"Missed games not tied to an injury report (benching, late signing, suspension) were {r['other_share']:.0%} "
+            f"of games and are left out.",
+            "Sleeper gives a status but no body part or timeline; IR, PUP and NA are treated as a player who has "
+            "already missed his last three games (a proxy, not measured).",
+            "Refit after each season: `dynasty-agent fit-availability`."]
+    return "\n".join(out)
+
+
+def risk_line(name: str, r: dict) -> str:
+    """One player's injury risk as a sentence: label, expected games missed
+    per 17 beside a healthy player's at the same point, then the reasons."""
+    line = (f"{name}: {r['label']} injury risk, about {r['missed_per_17']:.1f} expected games missed per 17 "
+            f"(a healthy player at this point: {r['healthy_per_17']:.1f}).")
+    if r["reasons"]:
+        reasons = "; ".join(r["reasons"])
+        line += f" {reasons[0].upper()}{reasons[1:]}."
+    return line
+
+
+def risk_footer(rows: list[dict]) -> str:
+    r = rows[0]["risk"].get("history_r")
+    history = (f"A player's injury history barely predicts his next season in the data (correlation {r:.2f}), so the label "
+               f"rests on recent missed games and current report status. " if r is not None else "")
+    return ("Injury risk is shown beside the numbers above and is not in them. " + history
+            + "Sleeper gives a status but no body part or timeline.")
+
+
+def risk_block(rows: list[dict]) -> list[str]:
+    return [risk_line(x["name"], x["risk"]) for x in rows] + [risk_footer(rows)] if rows else []

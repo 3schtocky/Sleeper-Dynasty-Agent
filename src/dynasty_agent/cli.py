@@ -7,7 +7,7 @@ import json
 import sys
 from datetime import datetime
 
-from dynasty_agent import blend, calibration, college, config, context, formatters, market, matchup, nfl_extra, nflverse, picks, prospect_model, prospects, refresh, schedule, simulate, sleeper, taxi, valuation, weather, weekly
+from dynasty_agent import availability, blend, calibration, college, config, context, formatters, market, matchup, nfl_extra, nflverse, picks, prospect_model, prospects, refresh, schedule, simulate, sleeper, taxi, valuation, weather, weekly
 from dynasty_agent.db import get_db
 from dynasty_agent.errors import AgentError
 from dynasty_agent.sleeper import SleeperClient
@@ -553,6 +553,16 @@ def cmd_backfill_history(args: argparse.Namespace) -> None:
         print("\nOne season is not enough to calibrate on: a season's projections need the one before it, and a fit needs at least a season to test.")
 
 
+def cmd_fit_availability(args: argparse.Namespace) -> None:
+    conn = get_db()
+    end = args.end_season if args.end_season is not None else context.latest_complete_season(conn)
+    try:
+        r = availability.fit_and_store(conn, end)
+    except ValueError as e:
+        raise AgentError(str(e)) from None
+    print(formatters.format_availability_fit(r))
+
+
 def cmd_calibrate_matchup_model(args: argparse.Namespace) -> None:
     conn = get_db()
     end = args.end_season if args.end_season is not None else context.latest_complete_season(conn)
@@ -634,7 +644,7 @@ def cmd_chat_eval(args: argparse.Namespace) -> None:
         if args.conversations:
             from dynasty_agent import conversation_eval
 
-            report = conversation_eval.run(get_db(), client, conversation_eval.SCENARIOS + conversation_eval.HARD_SCENARIOS + conversation_eval.FINDER_SCENARIOS if args.hard else None)
+            report = conversation_eval.run(get_db(), client, conversation_eval.SCENARIOS + conversation_eval.HARD_SCENARIOS + conversation_eval.FINDER_SCENARIOS + conversation_eval.INJURY_SCENARIOS if args.hard else None)
             for r in report["results"]:
                 print(f"  {'ok  ' if r['ok'] else 'FAIL'} [{r['scenario']}] {r['question']}"
                       + (f"\n         {r['why']}\n         reply: {r['reply'][:300]}" if r["why"] else ""))
@@ -779,6 +789,15 @@ def main() -> None:
     calibrate_matchup_parser.add_argument("--start-season", type=int, default=2018, help="First season to test (default 2018).")
     calibrate_matchup_parser.add_argument("--end-season", type=int, default=None, help="Last season (default: the last completed one).")
     calibrate_matchup_parser.set_defaults(func=cmd_calibrate_matchup_model)
+
+    fit_availability_parser = sub.add_parser(
+        "fit-availability",
+        help="Fit the injury-availability model on past seasons: how many games a QB, RB, WR or TE is expected to "
+        "miss, from his history, age and position, and from his recent misses and report status. Needs "
+        "backfill-history. Refit after each season.",
+    )
+    fit_availability_parser.add_argument("--end-season", type=int, default=None, help="Last season (default: the last completed one).")
+    fit_availability_parser.set_defaults(func=cmd_fit_availability)
 
     simulate_parser = sub.add_parser(
         "simulate-season",

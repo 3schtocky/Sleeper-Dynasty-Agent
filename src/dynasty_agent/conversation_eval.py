@@ -116,6 +116,16 @@ def agrees_with_facts() -> Check:
     def check(turn, shown, conn):
         facts = " ".join(turn.compact.get("facts", [])).lower()
         reply = turn.reply.lower()
+        for label, wrong in (("elevated", "high"), ("high", "elevated"), ("typical", "elevated")):
+            if f"{label} injury risk" in facts and f"{wrong} injury risk" not in facts:
+                said = re.findall(rf"{wrong} (?:injury )?risk", reply)
+                if said and f"{label}" not in reply:
+                    return f"facts say {label} injury risk, reply says {wrong}"
+        if ("elevated injury risk" in facts or "high injury risk" in facts) and re.search(
+                r"make (the|this|that) (trade|move)|in the sleeper app", reply):
+            return "told to make the trade although the facts flag injury risk and call it the user's call"
+        if "favor you" in facts and re.search(r"\bno, don'?t|don'?t (make )?(the |this |that )?trade|do not (make )?(the |this |that )?trade", reply):
+            return "facts say the numbers favor you, reply says don't trade"
         if "sell (worth trading away now)" in facts and "hold" in reply and "sell" not in reply:
             return "facts say SELL, reply says hold"
         if "favor the other team on both" in facts and re.search(r"good deal|make (the|this) trade", reply):
@@ -236,6 +246,48 @@ FINDER_SCENARIOS: list[Scenario] = [
         Step("Is Puka Nacua a buy or a sell?", [tool_is("player_check"), grounded(), never_says("pickup"), plain_and_short(6)]),
         Step("what about Rashee Rice?", [tool_is("player_check"), grounded()]),
         Step("What's CeeDee Lamb's trade value?", [tool_is("player_check"), grounded()]),
+    ]),
+]
+
+
+def asks_about(*words: str) -> Check:
+    """The reply ends in a question that names these words (a pointed data question, not a verdict)."""
+    def check(turn, shown, conn):
+        text = turn.reply.lower()
+        if "?" not in text:
+            return "no question in the reply"
+        missing = [w for w in words if w.lower() not in text]
+        return f"question does not mention {missing}" if missing else None
+    return check
+
+
+# The injury work: a risk question after a trade, nicknames, a name already under discussion, pushback that must
+# not flip the verdict, and an injury the user reports. Added after the first trial chat (Stafford for Daniels).
+INJURY_SCENARIOS: list[Scenario] = [
+    Scenario("injury question after a trade", [
+        Step("Should I trade Matthew Stafford for Jayden Daniels?", [tool_is("evaluate_trade"), grounded(), agrees_with_facts()]),
+        Step("what about his injury risk?", [tool_is("risk_check"), says("Daniels"), says("injury risk"), grounded(),
+                                             never_says("make the trade", "make that trade", "make this trade", "sleeper app",
+                                                           "consider trading", "you should"), agrees_with_facts(), plain_and_short(8)]),
+    ]),
+    Scenario("a nickname", [
+        Step("Is Matt Stafford a buy or a sell?", [tool_is("player_check"), answers(), says("Stafford"), grounded()]),
+    ]),
+    Scenario("a surname already under discussion", [
+        Step("Should I trade Matthew Stafford for Jayden Daniels?", [tool_is("evaluate_trade"), grounded()]),
+        Step("what if I add my 2028 2nd to get Daniels?", [tool_is("evaluate_trade"), answers(), args_include("2028"), grounded()]),
+    ]),
+    Scenario("pushback does not flip the verdict", [
+        Step("Should I trade Matthew Stafford for Jayden Daniels?", [tool_is("evaluate_trade"), grounded()]),
+        Step("I disagree, Daniels is way better and I want him", [tool_is("pushback"), says("Daniels"), says("favor"),
+                                                                  asks_about("games"), never_says("you're right", "you are right",
+                                                                  "good point", "i was wrong"), grounded(), plain_and_short(8)]),
+    ]),
+    Scenario("an injury the user reports", [
+        Step("Should I trade Matthew Stafford for Jayden Daniels?", [tool_is("evaluate_trade"), grounded()]),
+        Step("Daniels just got hurt", [asks_back("games")]),
+        Step("about 6 games", [tool_is("risk_check"), says("you said", "you told me", "your word", "assum"), says("6"), grounded(),
+                               never_says("sleeper app", "consider", "check current reports", "don't rely"), agrees_with_facts()]),
     ]),
 ]
 

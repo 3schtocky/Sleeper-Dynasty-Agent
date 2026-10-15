@@ -31,7 +31,7 @@ class FakeModel:
 
 @pytest.fixture
 def fake_tool(monkeypatch):
-    def run(conn, name, args, recent=None):
+    def run(conn, name, args, recent=None, overrides=None):
         if args.get("ambiguous"):
             return tools.ToolResult(name, clarification="Which Kenneth Walker do you mean: A or B?")
         return tools.ToolResult(name, numbers="Net market value (players + picks): -221\nWin probability: 78.1%",
@@ -102,7 +102,7 @@ def explain_tools(monkeypatch):
     """A trade answer, then explanations and a definition, as the real tools return them."""
     seen = {"recent": [], "topics": []}
 
-    def run(conn, name, args, recent=None):
+    def run(conn, name, args, recent=None, overrides=None):
         seen["recent"] = list(recent or [])
         if name == "explain":
             topic = args.get("topic", "")
@@ -221,7 +221,7 @@ def test_grounding_normalizes_how_numbers_are_written():
 
 def test_the_lineup_answer_carries_the_caveat_that_is_true_for_it(monkeypatch):
     for calibrated, wanted in ((None, tools.DRAFT_CAVEAT), (0.47, tools.CALIBRATED_CAVEAT)):
-        monkeypatch.setattr(tools, "run_tool", lambda conn, name, args, recent=None, c=calibrated: tools.ToolResult(
+        monkeypatch.setattr(tools, "run_tool", lambda conn, name, args, recent=None, overrides=None, c=calibrated: tools.ToolResult(
             name, numbers="Win probability: 47.0%", compact={"win_probability": "47.0%"},
             data={"recommended_win_probability_calibrated": c}))
         s = session(FakeModel([([{"name": "set_lineup", "arguments": {}}], "")], [["Start them."]]))

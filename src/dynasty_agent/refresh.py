@@ -29,7 +29,7 @@ import traceback
 from datetime import date, datetime, timezone
 from typing import Callable
 
-from dynasty_agent import college, config, market, nflverse, prospect_model, prospects, sleeper
+from dynasty_agent import college, config, market, nfl_extra, nflverse, prospect_model, prospects, sleeper
 from dynasty_agent.sleeper import SleeperClient
 
 COLLEGE_MONTHS = (8, 9, 10, 11, 12, 1)
@@ -96,6 +96,7 @@ def run(conn: sqlite3.Connection, today: date | None = None) -> list[dict]:
         _step(results, f"NFL stats {season - 1} (blend prior)", lambda: nflverse.ingest_season(conn, season - 1, scoring))
     if season_type in IN_SEASON_TYPES:
         _step(results, f"NFL stats {season}", lambda: nflverse.ingest_season(conn, season, scoring, force=True))
+        _step(results, f"NFL injury reports {season}", lambda: f"{nfl_extra.ingest_injuries(conn, season, force=True)} rows")
         _step(results, "NFL schedules and lines", lambda: str(nflverse.ensure_games_cached(force=True).name) + " refreshed")
     if season_type == "regular" and week:
         def matchups() -> str:
