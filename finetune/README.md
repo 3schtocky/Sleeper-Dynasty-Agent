@@ -2,6 +2,15 @@
 
 This folder is the recipe for fine-tuning the chat model (`qwen3:4b-instruct`) with QLoRA on a single consumer GPU. **Status: work in progress.** The default model stays the base model until a fine-tuned one passes every gate below.
 
+## The short version
+
+```
+pip install -e ".[finetune]"                # on an NVIDIA GPU, install the CUDA build of PyTorch first
+dynasty-agent finetune all --llama-cpp <folder with convert_hf_to_gguf.py and llama-quantize>
+```
+
+`finetune all` runs the four stages in order (`data`, `train`, `package`, `gates`). Each can be run alone (`dynasty-agent finetune train`), and `--dry-run` prints the exact commands without running anything. Work goes in `finetune-work/` (git-ignored). The sections below explain each stage and the scripts behind it.
+
 ## Why fine-tune at all
 
 The base model already passes both evals once the Python guards are in place (39 of 39 routing, 57 of 57 conversation steps). Fine-tuning is not there to fix those. It is there to make the model do the right thing *without* a guard stepping in: route a plain trade question on the first try, stop at the right length, and never write the sentence a guard would have to drop. A guard that rarely fires is a better guard than one that fires every turn. If a fine-tune does not beat the base model on the gates, **keep the base model**. That is a valid result.
@@ -34,14 +43,20 @@ A sampled reply is kept only if **every** check passes: each number is in the to
 Build it:
 
 ```
+dynasty-agent finetune data                 # needs Ollama running the base model; takes hours
+```
+
+or run the three scripts by hand:
+
+```
 python finetune/make_synthetic_league.py data/dynasty.db work/synthetic.db
 python finetune/build_dataset.py work/synthetic.db work/dataset        # needs Ollama running the base model
 python finetune/make_probes.py work/synthetic.db work/dataset          # fresh prompts, none in the training data
 ```
 
-`build_dataset.py` is resumable: rerun it and it skips finished work.
+`build_dataset.py` is resumable: rerun it and it skips finished work. It asks the base model for its three candidate replies at the same time, which Ollama serves in parallel on one GPU for about 2.3 times the throughput.
 
-## Training (`train.py`)
+## Training (`train.py`, `dynasty-agent finetune train`)
 
 QLoRA on [`Qwen/Qwen3-4B-Instruct-2507`](https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507) (the same weights Ollama calls `qwen3:4b-instruct`). The base is loaded in 4-bit (NF4, double quantization, bfloat16 compute) and small low-rank adapters are trained on top.
 
@@ -60,7 +75,7 @@ Two details matter:
 - **`lossfn.py` saves memory.** Plain training builds a `[sequence x 152,000-word vocabulary]` logits tensor, which alone overflows an 8 GB card at 2048 tokens. The lean loss runs the output layer only on assistant positions, in checkpointed chunks of 512, and computes the identical cross-entropy.
 
 ```
-pip install torch transformers peft trl datasets accelerate bitsandbytes
+python finetune/check_data.py work/dataset/train.jsonl work/dataset/eval.jsonl     # validates before you spend hours
 python finetune/train.py --train work/dataset/train.jsonl --eval work/dataset/eval.jsonl
 ```
 
@@ -85,6 +100,8 @@ A fine-tuned model replaces the default only if **all** of these hold, measured 
 2. `dynasty-agent chat-eval --conversations --hard --model dynasty-qwen3-4b:v2` passes every step.
 3. `score_probes.py` on the held-out probes is no worse than the base model on routing, topic, grounded takes and talk, and no reply contains markdown, a list or an emoji.
 4. Generation speed stays within about 10% of the base model.
+
+`dynasty-agent finetune gates` measures the base model and the new one on all four, prints PASS or FAIL for each gate, writes the numbers to `finetune-work/gates_report.json` and exits non-zero if any gate fails. The probes alone:
 
 ```
 python finetune/score_probes.py work/dataset/probes.jsonl work/probes_out.jsonl --model dynasty-qwen3-4b:v2

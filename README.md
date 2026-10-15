@@ -402,7 +402,7 @@ Current results for `qwen3:4b-instruct` with the Python guards below: **39 of 39
 
 ### Fine-tuning
 
-A fine-tuning recipe lives in [`finetune/`](finetune/README.md): QLoRA on a single consumer GPU, trained on a *synthetic* league so nothing private can end up in a published model. It is a work in progress. The default model stays `qwen3:4b-instruct` until a fine-tuned model passes every gate in that document.
+A fine-tuning recipe lives in [`finetune/`](finetune/README.md): QLoRA on a single consumer GPU, trained on a *synthetic* league so nothing private can end up in a published model. `dynasty-agent finetune all` runs it end to end (data, training, packaging for Ollama and the gates). It is a work in progress. The default model stays `qwen3:4b-instruct` until a fine-tuned model passes every gate in that document.
 
 ## How the chat stays honest
 
@@ -496,6 +496,7 @@ You never need these to use the project, because the chat runs the same function
 | `backfill-history` | Loads past seasons' stats and injury reports |
 | `schedule` | Runs `refresh` daily (macOS launchd; see `WINDOWS.md` for Task Scheduler) |
 | `chat`, `chat-eval` | The chat, and its evaluation |
+| `finetune data\|train\|package\|gates\|all` | The fine-tuning pipeline for developers: build a synthetic training set, train on a CUDA GPU, package the model for Ollama and test it against the base model. `--dry-run` prints the commands. See [`finetune/README.md`](finetune/README.md) |
 
 A trade from the command line, written any way you like (players by name, picks as `2027-1`, `"2027 1st"` or `"2027 1.05"`):
 

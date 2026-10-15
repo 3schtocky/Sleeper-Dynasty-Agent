@@ -5,7 +5,7 @@
 Routing and classification run greedy (temperature 0, as the chat does); takes and talk at the chat's own settings.
 Reports: share of tool-call rows whose call is valid and sends the right items to the right side, topic accuracy,
 share of takes that are grounded, plain and the right length, share of talk replies that pass, and any reply with
-markdown, a list or an emoji.
+markdown, a list or an emoji. `score()` is the same thing as a function, used by `dynasty-agent finetune gates`.
 """
 
 from __future__ import annotations
@@ -40,17 +40,13 @@ def grade_route(row: dict, calls: list[dict], text: str) -> tuple[bool, str]:
     return True, ""
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("probes", type=Path)
-    ap.add_argument("out", type=Path)
-    ap.add_argument("--model", required=True)
-    ap.add_argument("--limit", type=int, default=None)
-    a = ap.parse_args()
-    rows = [json.loads(l) for l in a.probes.open(encoding="utf-8")][: a.limit]
+def score(probes: Path, model: str, limit: int | None = None, verbose: bool = True) -> dict:
+    """Grade `model` on the probe rows. Returns {"stats": {kind: [passed, total]}, "bad_format": [row ids],
+    "results": [per-row dicts]}."""
+    rows = [json.loads(l) for l in Path(probes).open(encoding="utf-8")][:limit]
     stats = {k: [0, 0] for k in ("route", "topic", "take", "talk")}
     bad_format, results = [], []
-    with llm.OllamaClient(model=a.model) as client:
+    with llm.OllamaClient(model=model) as client:
         client.ensure_ready()
         client.warm()
         for row in rows:
@@ -77,13 +73,25 @@ def main() -> None:
             stats[kind][0] += ok
             stats[kind][1] += 1
             results.append({"id": row["id"], "kind": kind, "ok": ok, "why": why, "reply": reply})
-            print(f"{'ok  ' if ok else 'FAIL'} {row['id']} {why}", flush=True)
-    a.out.write_text("\n".join(json.dumps(r) for r in results) + "\n", encoding="utf-8")
+            if verbose:
+                print(f"{'ok  ' if ok else 'FAIL'} {row['id']} {why}", flush=True)
+    return {"stats": stats, "bad_format": bad_format, "results": results}
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("probes", type=Path)
+    ap.add_argument("out", type=Path)
+    ap.add_argument("--model", required=True)
+    ap.add_argument("--limit", type=int, default=None)
+    a = ap.parse_args()
+    report = score(a.probes, a.model, a.limit)
+    a.out.write_text("\n".join(json.dumps(r) for r in report["results"]) + "\n", encoding="utf-8")
     print("\nmodel:", a.model)
-    for k, (good, total) in stats.items():
+    for k, (good, total) in report["stats"].items():
         if total:
             print(f"  {k:6} {good}/{total}")
-    print("  replies with markdown, a list or an emoji:", bad_format or "none")
+    print("  replies with markdown, a list or an emoji:", report["bad_format"] or "none")
 
 
 if __name__ == "__main__":

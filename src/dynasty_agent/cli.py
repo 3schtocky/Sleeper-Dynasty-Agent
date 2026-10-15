@@ -62,6 +62,12 @@ def cmd_init(args: argparse.Namespace) -> None:
     print("Next: `dynasty-agent setup` loads everything the chat needs (once), then `dynasty-agent chat`.")
 
 
+def cmd_finetune(args: argparse.Namespace) -> None:
+    from dynasty_agent import finetune_flow
+
+    finetune_flow.run(args)
+
+
 def cmd_setup(args: argparse.Namespace) -> None:
     from dynasty_agent import setup_flow
 
@@ -950,6 +956,21 @@ def main() -> None:
     eval_parser.add_argument("--hard", action="store_true", help="With --conversations: also run the tougher scenarios.")
     eval_parser.add_argument("--record", action="store_true", help="Save the answers for the offline routing test.")
     eval_parser.set_defaults(func=cmd_chat_eval)
+
+    finetune_parser = sub.add_parser(
+        "finetune",
+        help="Fine-tune the chat model on a synthetic league and test it against the base model (see finetune/README.md).",
+    )
+    finetune_parser.add_argument("stage", choices=["data", "train", "package", "gates", "all"],
+                                 help="data: build the training set. train: QLoRA on a CUDA GPU. package: merge, convert and load it "
+                                      "into Ollama. gates: score it against the base model. all: every stage in order.")
+    finetune_parser.add_argument("--workdir", default="finetune-work", help="Where the dataset, runs and model files go (default finetune-work/, git-ignored).")
+    finetune_parser.add_argument("--base", default="qwen3:4b-instruct", help="The Ollama base model (also the teacher that writes the training replies).")
+    finetune_parser.add_argument("--name", default="dynasty-qwen3-4b:v2", help="The Ollama name for the fine-tuned model.")
+    finetune_parser.add_argument("--llama-cpp", default=None, help="package: a folder with llama.cpp's convert_hf_to_gguf.py and llama-quantize.")
+    finetune_parser.add_argument("--rebuild-data", action="store_true", help="data: build the synthetic league again.")
+    finetune_parser.add_argument("--dry-run", action="store_true", help="Print what each stage would run without running it.")
+    finetune_parser.set_defaults(func=cmd_finetune)
 
     args = parser.parse_args()
     try:

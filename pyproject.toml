@@ -25,3 +25,14 @@ where = ["src"]
 dev = [
     "pytest>=9.1.1",
 ]
+# Only for `dynasty-agent finetune train`. On an NVIDIA GPU install the CUDA build of torch first (pytorch.org).
+finetune = [
+    "torch",
+    "transformers>=5",
+    "peft",
+    "trl",
+    "datasets",
+    "accelerate",
+    "bitsandbytes",
+    "sentencepiece",
+]

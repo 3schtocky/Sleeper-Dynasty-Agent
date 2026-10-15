@@ -16,6 +16,11 @@ wheels/
 *.duckdb
 *.parquet
 
+# Fine-tuning work: synthetic league, datasets, training runs and model files
+/finetune-work/
+*.gguf
+*.safetensors
+
 # Secrets
 .env
 
