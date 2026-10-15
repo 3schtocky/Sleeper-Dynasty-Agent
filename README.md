@@ -1,70 +1,70 @@
 # Dynasty Agent
 
-A command-line assistant for a [Sleeper](https://sleeper.com) dynasty fantasy football league. It reads your real roster and league rules from Sleeper, adds NFL stats from [nflverse](https://github.com/nflverse) and dynasty market prices from [FantasyCalc](https://fantasycalc.com), and answers the questions a dynasty manager asks every week:
+**Ask your dynasty fantasy football team anything, in plain English.**
 
-- What is my roster worth, and am I contending or rebuilding?
-- Is this trade good for me?
-- Who should I start, who should I pick up and what should I bid?
-- What should I do with my rookie picks?
+```
+you> Should I trade Jonah Coleman and my 2028 2nd for a 2027 1st?
+  (the full trade breakdown, straight from Python: both sides, market value, win-now, three-year, injury risk)
+No, you should not make this trade. The net market value is -221, and the net win-now is -6.1.
+                                       qwen3:4b-instruct · 29.7 tok/s · first words 1.0s · tool: evaluate_trade
+```
 
-You can run each question as a command, or **talk to it in plain English** through a small open-source language model that runs on your own computer. Nothing about your league leaves your machine except the public requests to Sleeper, nflverse and FantasyCalc.
+Dynasty Agent connects to your [Sleeper](https://sleeper.com) league, adds NFL stats from [nflverse](https://github.com/nflverse) and dynasty trade values from [FantasyCalc](https://fantasycalc.com), and lets you **talk to it** about your team. A small open-source language model runs on your own computer, so it costs nothing per question and your league never leaves your machine.
 
-> **One idea runs through the whole project: the language model never computes a number.** Python does all the math, from public data, in code you can read. The model only picks which function to run and puts the result into friendly words, and Python checks what it says before you see it. See [How the chat stays honest](#how-the-chat-stays-honest).
+You can ask it:
+
+- **Trades:** "Should I trade Jonah Coleman and my 2028 2nd for a 2027 1st?" "Find me a running back to trade for."
+- **Your team:** "Am I a contender or should I rebuild?" "Should I sell my first?"
+- **Every week:** "Who should I start?" "Who should I pick up and how much should I bid?" "Anyone I should put on taxi?"
+- **Injuries:** "What about his injury risk?" "Daniels just got hurt."
+- **Why:** "How did you get his win-now value?" "Why does age matter so much for running backs?"
+- **Strategy:** "When should a dynasty team switch from contending to rebuilding?"
+
+> **The one rule: the language model never computes a number.** Python does all the math, from public data, in code you can read. The model only decides which analysis to run and puts the result into friendly words, and Python checks every sentence before you see it. See [How the chat stays honest](#how-the-chat-stays-honest).
 
 ## Contents
 
-1. [Quick start](#quick-start)
-2. [What you need](#what-you-need)
-3. [Install](#install) (macOS, Linux and Windows)
-4. [Connect your league](#connect-your-league)
-5. [Your first run](#your-first-run)
-6. [Everyday commands](#everyday-commands)
-7. [Talk to the agent](#talk-to-the-agent)
-8. [What is happening under the hood](#what-is-happening-under-the-hood)
-9. [The math, step by step](#the-math-step-by-step)
-10. [The machine learning](#the-machine-learning)
-11. [How the chat stays honest](#how-the-chat-stays-honest)
-12. [Limits you should know about](#limits-you-should-know-about)
-13. [Troubleshooting](#troubleshooting)
-14. [Glossary](#glossary)
-15. [Project layout](#project-layout) and [License](#license)
+1. [Get chatting](#get-chatting) (about 20 minutes, once)
+2. [What to ask](#what-to-ask)
+3. [Chat tips](#chat-tips)
+4. [What is happening under the hood](#what-is-happening-under-the-hood)
+5. [The math, step by step](#the-math-step-by-step)
+6. [The machine learning](#the-machine-learning)
+7. [How the chat stays honest](#how-the-chat-stays-honest)
+8. [Limits you should know about](#limits-you-should-know-about)
+9. [Troubleshooting](#troubleshooting) and [Glossary](#glossary)
+10. [Appendix: the commands behind the chat](#appendix-the-commands-behind-the-chat)
 
 ---
 
-## Quick start
+## Get chatting
 
-If you already have Python 3.12 or newer and a Sleeper account, this is the whole setup:
+There are five steps. The first four are one-time setup. After that, you start the chat and ask questions.
 
-```
-git clone https://github.com/3schtocky/Sleeper-Dynasty-Agent.git
-cd Sleeper-Dynasty-Agent
-python3 -m venv .venv
-source .venv/bin/activate            # Windows PowerShell: .\.venv\Scripts\Activate.ps1
-pip install -e ".[dev]"
-dynasty-agent init --username <your-sleeper-username>
-dynasty-agent refresh                # downloads everything; the first run takes several minutes
-dynasty-agent roster                 # is this your team?
-dynasty-agent valuate                # value of every player, plus contend or rebuild
-```
-
-Want the chat as well? Install [Ollama](https://ollama.com/download), run `ollama pull qwen3:4b-instruct` (about 2.5 GB) and then `dynasty-agent chat`.
-
-## What you need
+### 1. Install the basics
 
 | You need | Why | Check it |
 |---|---|---|
-| Python 3.12 or newer | The tool is plain Python with a few small dependencies | `python3 --version` (Windows: `python --version`) |
+| Python 3.12 or newer | The tool is plain Python | `python3 --version` (Windows: `python --version`) |
 | Git | To download the project | `git --version` |
-| A Sleeper account in at least one dynasty league | It reads your league through Sleeper's public API. No API key and no password | Your Sleeper username |
-| About 2 GB of free disk | NFL stats and the local database. The chat model adds 2.5 GB | |
-| Optional: [Ollama](https://ollama.com) | Runs the chat model locally | `ollama --version` |
-| Optional: 8 GB of RAM or more for the chat | The 4-billion-parameter model uses about 3 GB | |
+| A Sleeper account in a dynasty league | It reads your league through Sleeper's public API. No API key and no password | Your Sleeper username |
+| About 5 GB of free disk | 2 GB for NFL stats and the local database, 2.5 GB for the chat model | |
+| 8 GB of RAM or more | The 4-billion-parameter model uses about 3 GB | |
 
-You do not need a GPU. The chat runs on a laptop (about 30 tokens per second on a MacBook Air M4) and faster on a gaming GPU (about 85 tokens per second on an RTX 3070).
+You do not need a graphics card. The chat runs on a laptop at about 30 tokens per second on a MacBook Air M4, and about 85 on an RTX 3070.
 
-## Install
+### 2. Install the chat model
 
-### macOS and Linux
+1. Install [Ollama](https://ollama.com/download) and open it. It runs quietly in the background.
+2. Download the model (about 2.5 GB, once). In a terminal:
+
+```
+ollama pull qwen3:4b-instruct
+```
+
+### 3. Install the project
+
+**macOS and Linux**
 
 ```
 git clone https://github.com/3schtocky/Sleeper-Dynasty-Agent.git
@@ -74,11 +74,7 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-A *virtual environment* (`.venv`) keeps this project's packages separate from the rest of your computer. Activate it (`source .venv/bin/activate`) in every new terminal window before you use `dynasty-agent`.
-
-### Windows
-
-Everything works the same, with PowerShell instead of Bash. The short version:
+**Windows (PowerShell)**
 
 ```
 git clone https://github.com/3schtocky/Sleeper-Dynasty-Agent.git
@@ -88,162 +84,107 @@ py -3.12 -m venv .venv
 pip install -e ".[dev]"
 ```
 
-If PowerShell says "running scripts is disabled", run `Set-ExecutionPolicy -Scope Process Bypass` once in that window. [`WINDOWS.md`](WINDOWS.md) covers installing Git and Python, line continuation (a backtick, not a backslash), the Task Scheduler equivalent of `schedule` and the common errors.
+A *virtual environment* (`.venv`) keeps this project's packages separate from the rest of your computer. Activate it in every new terminal window before you use `dynasty-agent`. If PowerShell says "running scripts is disabled", run `Set-ExecutionPolicy -Scope Process Bypass` once in that window. [`WINDOWS.md`](WINDOWS.md) covers installing Git and Python on Windows and the common errors.
 
-### Check that it worked
+### 4. Connect your league and load the data
 
-```
-dynasty-agent --help
-pytest -q
-```
-
-The first prints the command list. The second runs the offline test suite (no network needed) and should end with every test passing.
-
-## Connect your league
-
-Nothing about your account or league is written into the code. One command finds your league and saves its IDs to a local `.env` file (git-ignored, so it is never committed):
+Nothing about your account is written into the code. `init` finds your league and saves its IDs to a local `.env` file (git-ignored, never committed). Then paste the one-time data load. It downloads a lot (play-by-play stats are about 20 MB per season), so expect 10 to 15 minutes.
 
 ```
 dynasty-agent init --username <your-sleeper-username>
 ```
 
-It looks up your user ID, finds your dynasty leagues for the current season and fills in `SLEEPER_USERNAME`, `SLEEPER_USER_ID`, `LEAGUE_ID` and `DRAFT_ID`. If you are in more than one league, it lists them. Run the command again with `--league-id <id>` to choose one.
+If you are in more than one league, it lists them. Run it again with `--league-id <id>` to choose one.
 
-Prefer to do it by hand? Copy `.env.example` to `.env` and fill in the four values. Your league ID is in your league's Sleeper URL.
+```
+dynasty-agent sync
+dynasty-agent ingest-nflverse --season <last completed season>
+dynasty-agent ingest-draft-data
+dynasty-agent ingest-college --season 2008 --through <this year>
+dynasty-agent fit-prospect-model
+dynasty-agent backfill-history
+dynasty-agent calibrate-matchup-model
+dynasty-agent fit-availability
+```
 
-**Is your league a different shape?** The project was tuned on one league: 12 teams, 1 QB, full PPR, no TE premium, a 3-round rookie draft. Your scoring and roster rules are read live from Sleeper, so it runs on other shapes. Two things do not adapt automatically:
+Those eight commands fetch your league, a few seasons of NFL history and the data the models are fitted on. You run them once. After that the chat refreshes your league every time it starts, and you can ask it about anything.
 
-- Set `FANTASYCALC_NUM_QBS`, `FANTASYCALC_NUM_TEAMS` and `FANTASYCALC_PPR` in `.env` (they are in `.env.example`) so market prices match your format.
+**Is your league a different shape?** The project was tuned on one league: 12 teams, 1 QB, full PPR, no TE premium and a 3-round rookie draft. Your scoring and roster rules are read live from Sleeper, so it runs on other shapes, but two things do not adapt on their own:
+
+- Set `FANTASYCALC_NUM_QBS`, `FANTASYCALC_NUM_TEAMS` and `FANTASYCALC_PPR` in `.env` (they are listed in `.env.example`) so market prices match your format.
 - The age curves, the QB discount and the receiver bump were calibrated for the league above. `CLAUDE.md` explains why each number is what it is. Read it before you trust them in a superflex or half-PPR league.
 
-## Your first run
+### 5. Start the chat
 
 ```
-dynasty-agent refresh
+dynasty-agent chat
 ```
 
-`refresh` brings everything current, by time of year. The first run downloads a lot (play-by-play stats are about 20 MB per season), so expect several minutes. After that it takes seconds.
+It refreshes your league while the model loads (the first reply can take about 20 seconds), then waits for you. Type a question and press Enter. Type `/quit` to leave.
 
-On a brand-new machine, `refresh` needs some history to build on. Run these once, in order:
+That is the whole workflow. You do not need to remember any other command.
 
-```
-dynasty-agent sync                                          # your league, rosters, picks and market values
-dynasty-agent ingest-nflverse --season <last full season>   # weekly stats
-dynasty-agent ingest-draft-data                             # NFL draft picks, combine results, player ID map
-dynasty-agent ingest-college --season 2008 --through <this year>
-dynasty-agent fit-prospect-model                            # the rookie model
-dynasty-agent backfill-history                              # past seasons' stats and injury reports
-dynasty-agent calibrate-matchup-model                       # corrects win probabilities (see below)
-dynasty-agent fit-availability                              # injury availability model
-```
+## What to ask
 
-Then check it:
+Phrase things the way you would to a friend. It understands names, nicknames ("Matt Stafford"), picks written any way ("my '27 first", "2027 round 1 pick") and follow-ups ("what about his injury risk?"). What it can do:
 
-```
-dynasty-agent roster       # your players with age, team, market value and 30-day trend
-dynasty-agent valuate      # win-now and three-year value per player, plus the verdict
-```
+| Ask about | Examples | What runs |
+|---|---|---|
+| A trade | "Would you trade my 2027 1st for Trey Benson?" "I'm offered Bijan Robinson for Rashee Rice and my 2027 first. Take it?" | Both sides on win-now, three-year and market value, picks discounted, consolidation and roster fit, injury risk beside the numbers |
+| Trade ideas | "Help me find a tight end." "What about running back?" | Realistic offers, scored, flagged when they are lowballs |
+| One player | "Tell me about Jaxon Smith-Njigba." | Value, age, injury risk, market price, whether he fits your roster |
+| Your team | "Am I a contender or should I rebuild?" "How does my roster look?" | Contend, rebuild or unclear, with its confidence |
+| This week | "Who should I start?" "What are my chances this week?" | The lineup with the best win probability against your real opponent |
+| Waivers | "Who should I pick up?" "How much should I bid on Trey Benson?" | Targets ranked by how much they raise your best lineup, and a sized bid |
+| Draft picks | "Should I sell my first?" "Are my picks worth keeping?" | Buy, hold or sell for each pick, against what that slot has produced |
+| Taxi and IR | "Anyone I should put on taxi?" | Which moves free the most roster spots |
+| Injuries | "What about his injury risk?" "Daniels just got hurt." | Expected games missed. If you report an injury it asks how many games and uses your answer as a labeled assumption |
+| How it works | "How did you get his win-now value?" "Why is his three-year lower?" "What is situation score?" | The calculation with your own numbers, step by step |
+| Strategy | "How should I think about trading a 30 year old running back?" | General dynasty advice. It will not state a player's stats from memory |
 
-Everything is cached in `data/` (a local SQLite database plus downloaded stat files). It is git-ignored and safe to delete: `refresh` rebuilds it.
+**It pushes back, and you can push back too.** If you disagree with a trade verdict, say so. The verdict only changes when you give it something new, such as how many games a player will miss. It will not simply agree with you.
 
-**Keep it fresh automatically.** `dynasty-agent schedule --install` runs `refresh` daily at 06:00 on macOS (`--at HH:MM` to change it). On Windows, `WINDOWS.md` shows the Task Scheduler line.
+## Chat tips
 
-## Everyday commands
-
-| Command | What it answers |
-|---|---|
-| `refresh` | Bring everything current. Run it first. |
-| `roster` | Who is on my team, and what are they worth? |
-| `valuate` | Win-now value and three-year value per player, and am I contending or rebuilding? |
-| `trade` | Is this trade good? Both sides on win-now, three-year and market value, picks discounted. |
-| `optimize-lineup --week N` | The starting lineup that maximizes my chance of winning this week. |
-| `predict-matchup --week N` | Win probability between any two rosters. |
-| `faab --player "Name"` | How much should I bid on this waiver target? |
-| `digest --week N` | The whole week in one command: lineup, wind flags, bench options and waiver targets. |
-| `picks` | Buy, hold or sell on my rookie picks. |
-| `taxi` | Who should go on taxi or IR to free roster spots? |
-| `prospect-board` | A ranked rookie board (`--mode post-draft` or `--mode pre-draft`). |
-| `simulate-season` | Playoff odds for every team, from 10,000 simulated seasons. |
-| `chat` | Ask any of the above in plain English. |
-| `chat-eval` | Score the local model on a fixed set of questions. |
-
-A trade, written any way you like (players by name, picks as `2027-1`, `"2027 1st"` or `"2027 1.05"`):
-
-```
-dynasty-agent trade --send "Rashee Rice" --receive-pick 2027-1 --receive-pick 2027-3 --discount-rate 0.20
-```
-
-It reports three numbers per side and deliberately never adds them together: **win-now** (points per game for this year's title), **three-year** (the same with age decline and a three-season horizon) and **market value** (what FantasyCalc says the player or pick sells for). A pick cannot help you win this week, so it appears only in market value.
-
-The full command list, with every option, is in `dynasty-agent --help` and `dynasty-agent <command> --help`.
-
-## Talk to the agent
-
-`chat` answers plain-English questions about your league with a small open-source model running on your own machine through [Ollama](https://ollama.com).
-
-**One-time setup**
-
-1. Install Ollama from [ollama.com/download](https://ollama.com/download) and open it.
-2. Download the model (about 2.5 GB, once): `ollama pull qwen3:4b-instruct`
-3. Run `dynasty-agent chat`
-
-**Example**
-
-```
-you> Should I trade Jonah Coleman and my 2028 2nd for a 2027 1st?
-  (the full trade evaluation, exactly as `trade` prints it)
-No, you should not make this trade. The net market value is -221, and the net win-now is -6.1.
-                                   qwen3:4b-instruct · 29.7 tok/s · first words 1.0s · tool: evaluate_trade
-```
-
-The numbers block comes first, straight from Python. The model's sentences come after it.
-
-**Things to ask**
-
-- Lineups and waivers: "Who should I start?", "Who should I pick up?", "How much should I bid on Trey Benson?"
-- Trades: "Can I get Puka Nacua for CeeDee Lamb straight up?", "Find me a running back to trade for."
-- Your team: "Am I a contender?", "Should I sell my first?", "Anyone I should put on taxi?"
-- Injuries: "What about his injury risk?", "Daniels just got hurt."
-- How it works: "How did you get his win-now value?", "Why does age matter for running backs?", "What is situation score?"
-- Strategy talk: "When should a dynasty team switch from contending to rebuilding?"
-
-**In the chat:** `/raw` shows exactly what the model was given for the last answer, `/stats off` hides the speed line, `/help` lists commands and `/quit` leaves. `dynasty-agent chat --no-refresh` skips the start-up refresh.
-
-**Settings** (in `.env`): `LLM_MODEL` (default `qwen3:4b-instruct`) and `OLLAMA_URL` (default `http://localhost:11434`). `dynasty-agent chat-eval --model <name>` scores any other Ollama model on the same questions before you switch to it.
-
-**Moves are yours to make.** Sleeper's API is read-only, so the agent can tell you what to do but cannot change your roster.
+- `/raw` shows exactly what the model was given for the last answer, and any sentence that was left out.
+- `/stats off` hides the speed line under each answer (`/stats on` brings it back).
+- `/help` lists commands and `/quit` leaves.
+- `dynasty-agent chat --no-refresh` skips the start-up refresh for a quick restart.
+- **Moves are yours to make.** Sleeper's API is read-only, so the agent can tell you what to do but cannot change your roster.
+- **Watch it work** from a second terminal: `ollama ps` shows the loaded model and its memory use.
+- **Settings** go in `.env`: `LLM_MODEL` (default `qwen3:4b-instruct`) and `OLLAMA_URL` (default `http://localhost:11434`). `dynasty-agent chat-eval --model <name>` scores another Ollama model on the same questions before you switch to it.
 
 ---
 
 ## What is happening under the hood
 
 ```
- public data                    local database                   your questions
- -----------                    --------------                   --------------
- Sleeper API  ---+                                          +---  command line
- (roster, rules) |                                          |     (dynasty-agent trade ...)
- nflverse     ---+--> ingest --> SQLite + parquet files --+-+
- (stats, injuries,       (data/)        |                  |
-  schedules, draft)                     v                  |     plain English
- FantasyCalc  ---+              +----------------+         +---  (dynasty-agent chat)
- (market prices) |              |  Python math   |                    |
- sportsdataverse-+              |  (metrics,     |                    v
- (college stats)                |  valuation,    |            +---------------+
-                                |  calibration,  | <--------- | local model   |
-                                |  availability) |  chooses   | (Ollama)      |
-                                +-------+--------+  which     +-------+-------+
-                                        |           function          |
-                                        v                             v
-                                 numbers block  ------------>  a short take, checked
-                                 (always shown first)          by Python before shown
+ public data                    local database                   you
+ -----------                    --------------                   ---
+ Sleeper API  ---+                                                 |  plain English
+ (roster, rules) |                                                 v  (dynasty-agent chat)
+ nflverse     ---+--> ingest --> SQLite + parquet files        +---------------+
+ (stats, injuries,       (data/)        |                      | local model   |
+  schedules, draft)                     v                      | (Ollama)      |
+ FantasyCalc  ---+              +----------------+  chooses    +-------+-------+
+ (market prices) |              |  Python math   | <---------- which   |
+ sportsdataverse-+              |  (metrics,     |  function           |
+ (college stats)                |  valuation,    |                     |
+                                |  calibration,  |                     |
+                                |  availability) |                     |
+                                +-------+--------+                     |
+                                        |                              v
+                                        v                       a short take, checked
+                                 numbers block  ------------>   by Python before shown
+                                 (always shown first)
 ```
 
 **Four layers, each with one job**
 
 1. **Ingest.** Download public data and store it. Sleeper supplies your roster and rules. nflverse supplies weekly stats, injury reports, schedules and betting lines. FantasyCalc supplies dynasty trade values. College stats come from sportsdataverse. Each source is cached, so commands run offline after a `refresh`.
 2. **Math.** Plain Python functions turn that data into values, probabilities and recommendations. These are in `src/dynasty_agent/` and covered by tests. They use no machine learning except where noted in [The machine learning](#the-machine-learning).
-3. **Commands.** Each question has a command. It prints its working: the inputs, the result and the caveats.
-4. **Chat.** A language model sits on top. It chooses which command fits a plain-English question and writes a short, friendly take. It does not do arithmetic.
+3. **Chat.** This is how you use it. A language model reads your plain-English question, chooses which analysis fits and writes a short, friendly take. It does not do arithmetic.
+4. **Commands.** Every analysis is also a command that prints its working: the inputs, the result and the caveats. The chat runs the same functions, and the [appendix](#appendix-the-commands-behind-the-chat) lists them for scripting and debugging.
 
 **Design rules the whole project follows**
 
@@ -487,7 +428,7 @@ Questions about how a number was built (`explain`), trade ideas, single-player c
 
 ## Limits you should know about
 
-- **Built for one league shape.** See [Connect your league](#connect-your-league).
+- **Built for one league shape.** See step 4 of [Get chatting](#get-chatting).
 - **Players are treated as independent** when estimating win probability, which they are not.
 - **The calibration is fitted on NFL team games** and applied to fantasy lineups. Read it as right in direction and rough in size.
 - **Injury data has no body part or timeline.** Sleeper gives a status and nothing else. IR, PUP and NA have no weekly history, so they are treated as a player who has already missed his last three games, and every output that does this says so.
@@ -530,6 +471,42 @@ If something else breaks, run the command again with the full error text in hand
 - **Leak:** accidentally letting a prediction see information from its own future. Several tests exist to catch this.
 - **Grounded:** every number in a sentence appears in the tool's output.
 - **QLoRA:** a way to fine-tune a large model on a small GPU by training small add-on matrices on top of a compressed copy of it.
+
+## Appendix: the commands behind the chat
+
+You never need these to use the project, because the chat runs the same functions when you ask. They are here for scripting, for debugging a number and for people who prefer a terminal. Each command prints its working: the inputs, the result and the caveats. `dynasty-agent --help` and `dynasty-agent <command> --help` list every option.
+
+| Command | What it does |
+|---|---|
+| `init --username <name>` | Finds your league and writes `.env` |
+| `sync` | Pulls your league, rosters, picks, drafts and FantasyCalc values |
+| `refresh` | Brings everything current, by time of year. The chat runs it when it starts |
+| `roster` | Your players with age, team, market value and 30-day trend |
+| `valuate` | Win-now and three-year value per player, plus contend or rebuild |
+| `trade` | Evaluates a trade: both sides, picks discounted, consolidation flagged |
+| `optimize-lineup --week N` | The lineup that maximizes win probability against your real opponent |
+| `predict-matchup --week N` | Win probability between any two rosters |
+| `faab --player "Name"` | A sized FAAB bid for one waiver target |
+| `digest --week N` | The whole week in one command: lineup, wind flags, bench options and waiver targets |
+| `picks` | Buy, hold or sell on your rookie picks (`--all` for every team) |
+| `taxi` | Taxi and IR moves that free roster spots |
+| `prospect-board` | A ranked rookie board (`--mode post-draft` or `--mode pre-draft`) |
+| `simulate-season` | Playoff odds for every team from 10,000 simulated seasons |
+| `ingest-nflverse`, `ingest-draft-data`, `ingest-college` | Download stats, draft and combine data, and college production |
+| `fit-prospect-model`, `calibrate-blend`, `calibrate-matchup-model`, `fit-availability` | Fit or test the models. Refit after each season |
+| `backfill-history` | Loads past seasons' stats and injury reports |
+| `schedule` | Runs `refresh` daily (macOS launchd; see `WINDOWS.md` for Task Scheduler) |
+| `chat`, `chat-eval` | The chat, and its evaluation |
+
+A trade from the command line, written any way you like (players by name, picks as `2027-1`, `"2027 1st"` or `"2027 1.05"`):
+
+```
+dynasty-agent trade --send "Rashee Rice" --receive-pick 2027-1 --receive-pick 2027-3 --discount-rate 0.20
+```
+
+`trade` reports three numbers per side and deliberately never adds them together: **win-now** (points per game for this year's title), **three-year** (the same with age decline over three seasons) and **market value** (what FantasyCalc says the player or pick sells for). A pick cannot help you win this week, so it appears only in market value.
+
+Everything is cached in `data/` (a local SQLite database plus downloaded stat files). It is git-ignored and safe to delete: `refresh` rebuilds it.
 
 ## Project layout
 
