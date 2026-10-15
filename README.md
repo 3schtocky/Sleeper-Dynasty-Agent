@@ -88,30 +88,27 @@ A *virtual environment* (`.venv`) keeps this project's packages separate from th
 
 ### 4. Connect your league and load the data
 
-Nothing about your account is written into the code. `init` finds your league and saves its IDs to a local `.env` file (git-ignored, never committed). Then paste the one-time data load. It downloads a lot (play-by-play stats are about 20 MB per season), so expect 10 to 15 minutes.
+One command does all of it:
 
 ```
-dynasty-agent init --username <your-sleeper-username>
+dynasty-agent setup --username <your-sleeper-username>
 ```
 
-If you are in more than one league, it lists them. Run it again with `--league-id <id>` to choose one.
+It prints its progress as it goes (steps `[1/9]` to `[9/9]`):
 
-```
-dynasty-agent sync
-dynasty-agent ingest-nflverse --season <last completed season>
-dynasty-agent ingest-draft-data
-dynasty-agent ingest-college --season 2008 --through <this year>
-dynasty-agent fit-prospect-model
-dynasty-agent backfill-history
-dynasty-agent calibrate-matchup-model
-dynasty-agent fit-availability
-```
+1. Connects your league and saves its IDs to a local `.env` file (git-ignored, never committed). If you are in more than one league it lists them. Run it again with `--league-id <id>` to choose one.
+2. Downloads your rosters, picks and market values, last season's NFL stats, NFL draft and combine results, and college production.
+3. Loads past seasons' stats and injury reports.
+4. Fits the three models: rookie values, the win-probability correction and injury availability.
+5. Brings everything current for this week.
 
-Those eight commands fetch your league, a few seasons of NFL history and the data the models are fitted on. You run them once. After that the chat refreshes your league every time it starts, and you can ask it about anything.
+It downloads a lot (play-by-play stats are about 20 MB per season), so expect 10 to 15 minutes the first time. It is **safe to rerun**: finished downloads are cached, models that are already fitted are skipped (`--refit` fits them again) and it stops at the first failure with a note on how to continue. After that the chat refreshes your league every time it starts.
+
+Prefer the individual commands? They are listed in the [appendix](#appendix-the-commands-behind-the-chat).
 
 **Is your league a different shape?** The project was tuned on one league: 12 teams, 1 QB, full PPR, no TE premium and a 3-round rookie draft. Your scoring and roster rules are read live from Sleeper, so it runs on other shapes, but two things do not adapt on their own:
 
-- Set `FANTASYCALC_NUM_QBS`, `FANTASYCALC_NUM_TEAMS` and `FANTASYCALC_PPR` in `.env` (they are listed in `.env.example`) so market prices match your format.
+- Set `FANTASYCALC_NUM_QBS`, `FANTASYCALC_NUM_TEAMS` and `FANTASYCALC_PPR` in `.env` (they are listed in `.env.example`) so market prices match your format. Do this *before* the data load: run `dynasty-agent init --username <name>`, edit `.env`, then run `dynasty-agent setup`.
 - The age curves, the QB discount and the receiver bump were calibrated for the league above. `CLAUDE.md` explains why each number is what it is. Read it before you trust them in a superflex or half-PPR league.
 
 ### 5. Start the chat
@@ -442,7 +439,8 @@ Questions about how a number was built (`explain`), trade ideas, single-player c
 | Symptom | Fix |
 |---|---|
 | `dynasty-agent: command not found` | Activate the virtual environment (`source .venv/bin/activate` or `.\.venv\Scripts\Activate.ps1`) |
-| `No roster found for this user` | Run `dynasty-agent init --username <you>`, then `dynasty-agent refresh` |
+| `The chat needs ... first` | Run `dynasty-agent setup` once. It loads what the chat needs and is safe to rerun |
+| `No roster found for this user` | Run `dynasty-agent setup --username <you>` |
 | `Ollama isn't running` | Open the Ollama app (or run `ollama serve`) and try again |
 | `The model qwen3:4b-instruct isn't installed` | `ollama pull qwen3:4b-instruct` |
 | Your league was renewed and the data looks old | Sleeper gives a renewed dynasty league a new ID each season. `sync` says so and prints the `init` command |
@@ -478,7 +476,8 @@ You never need these to use the project, because the chat runs the same function
 
 | Command | What it does |
 |---|---|
-| `init --username <name>` | Finds your league and writes `.env` |
+| `setup --username <name>` | The one-time load: connects your league, downloads the data, fits the models. Runs the commands below in order |
+| `init --username <name>` | Finds your league and writes `.env` (what `setup` runs first) |
 | `sync` | Pulls your league, rosters, picks, drafts and FantasyCalc values |
 | `refresh` | Brings everything current, by time of year. The chat runs it when it starts |
 | `roster` | Your players with age, team, market value and 30-day trend |

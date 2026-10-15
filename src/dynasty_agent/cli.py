@@ -59,7 +59,13 @@ def cmd_init(args: argparse.Namespace) -> None:
     )
     print(f"Wrote {config.ENV_PATH}")
     print(f"League: {league['name']} ({league['league_id']}, {league.get('season') or season} season)")
-    print("Next: `dynasty-agent sync`, then the rest of \"First run on a new machine\" in README.md (or `dynasty-agent refresh` once those are done).")
+    print("Next: `dynasty-agent setup` loads everything the chat needs (once), then `dynasty-agent chat`.")
+
+
+def cmd_setup(args: argparse.Namespace) -> None:
+    from dynasty_agent import setup_flow
+
+    setup_flow.run(args, sys.modules[__name__])
 
 
 def cmd_sync(args: argparse.Namespace) -> None:
@@ -631,8 +637,17 @@ def cmd_simulate_season(args: argparse.Namespace) -> None:
 def cmd_chat(args: argparse.Namespace) -> None:
     from dynasty_agent import chat
 
+    from dynasty_agent import setup_flow
+
     context.require_config()
-    chat.run(get_db(), do_refresh=not args.no_refresh)
+    conn = get_db()
+    try:
+        missing = setup_flow.missing_pieces(conn)
+    except Exception:  # an empty or unmigrated database has none of the tables: it needs setup
+        missing = ["your league"]
+    if missing:
+        raise AgentError(f"The chat needs {', '.join(missing)} first. Run `dynasty-agent setup` once (about 10 to 15 minutes), then start the chat again.")
+    chat.run(conn, do_refresh=not args.no_refresh)
 
 
 def cmd_chat_eval(args: argparse.Namespace) -> None:
@@ -673,6 +688,16 @@ def main() -> None:
         "--league-id", default=None, help="Pick a specific league if --username is in more than one this season."
     )
     init_parser.set_defaults(func=cmd_init)
+
+    setup_parser = sub.add_parser(
+        "setup",
+        help="The one-time load for a new install: connect your league, download the data and fit the models. "
+             "Safe to rerun. Run it once, then `chat`.",
+    )
+    setup_parser.add_argument("--username", default=None, help="Your Sleeper username (only needed the first time).")
+    setup_parser.add_argument("--league-id", default=None, help="Pick a specific league if you are in more than one.")
+    setup_parser.add_argument("--refit", action="store_true", help="Fit the models again even if they are already fitted.")
+    setup_parser.set_defaults(func=cmd_setup)
 
     sub.add_parser(
         "sync",

@@ -78,7 +78,7 @@ dynasty-agent roster                         # sanity check: is this your team?
 dynasty-agent valuate                        # win-now/three-year value + the verdict
 ```
 
-First run on a new machine: `sync`, `ingest-nflverse --season <last completed season>`, `ingest-draft-data`, `ingest-college --season 2008 --through <current season>`, `fit-prospect-model`, `backfill-history`, `calibrate-matchup-model` and `fit-availability`; see the main README and the "Moving to a second machine" section below.
+First run on a new machine: `dynasty-agent setup --username <your-sleeper-username>` does the whole one-time load (it replaces running `sync`, `ingest-nflverse`, `ingest-draft-data`, `ingest-college`, `backfill-history` and the three model fits by hand); see the main README and the "Moving to a second machine" section below.
 
 **Daily refresh.** `dynasty-agent schedule` uses macOS's launchd and tells you so on Windows. The Windows equivalent is one Task Scheduler command, run once from the project folder (written from Microsoft's documented `schtasks` syntax, not yet run on a Windows machine for this project):
 

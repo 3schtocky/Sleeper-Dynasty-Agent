@@ -39,6 +39,17 @@ FANTASYCALC_PARAMS = {
 }
 
 
+def reload() -> None:
+    """Re-read .env into the settings above, for a command that has just written it (`setup` runs `init` and then
+    needs the new league id without a restart)."""
+    global SLEEPER_USERNAME, SLEEPER_USER_ID, LEAGUE_ID, DRAFT_ID
+    load_dotenv(ENV_PATH, override=True)
+    SLEEPER_USERNAME = os.environ.get("SLEEPER_USERNAME")
+    SLEEPER_USER_ID = os.environ.get("SLEEPER_USER_ID")
+    LEAGUE_ID = os.environ.get("LEAGUE_ID")
+    DRAFT_ID = os.environ.get("DRAFT_ID")
+
+
 def missing_config() -> list[str]:
     """Which required .env variables are unset, empty list if none. Used to
     give a clear "run init first" message instead of a confusing API error
