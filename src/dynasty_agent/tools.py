@@ -18,7 +18,7 @@ import re
 import sqlite3
 from dataclasses import dataclass, field
 
-from dynasty_agent import context, explain, formatters, picks, points, taxi, valuation, weekly
+from dynasty_agent import context, explain, formatters, picks, player_check, points, taxi, trade_finder, valuation, weekly
 from dynasty_agent.valuation import AmbiguousPlayer, PlayerNotFound
 
 _LIST = {"type": "array", "items": {"type": "string"}}
@@ -61,6 +61,8 @@ TOOLS = [
 TOOL_NAMES = [t["function"]["name"] for t in TOOLS]
 # Not offered to the model: a seventh tool dropped its routing of the six from 39 of 39 to 36 on the
 # bake-off questions, so Python recognizes an explain question itself (explain.detect) and calls this.
+FIND_TRADES = "find_trades"
+PLAYER_CHECK = "player_check"
 EXPLAIN = "explain"
 
 # What a win probability or projection here is, carried into every answer
@@ -157,7 +159,7 @@ def run_tool(conn: sqlite3.Connection, name: str, args: dict | None, recent: lis
     few results in this chat, oldest first, which explain reads to find what
     "that" refers to."""
     args = args or {}
-    if name not in TOOL_NAMES and name != EXPLAIN:
+    if name not in TOOL_NAMES and name not in (EXPLAIN, FIND_TRADES, PLAYER_CHECK):
         return ToolResult(name, clarification=f"I don't have a tool called {name}.")
     me = context.my_roster_id(conn)
     season = context.stats_season(conn)
@@ -345,6 +347,37 @@ def fix_sides(conn, me: int, send: list[str], receive: list[str], send_picks: li
             receive_picks, send_picks = send_picks, []
             notes.append("The picks named are evaluated as what you get for those players.")
     return new_send, new_receive, send_picks, receive_picks, notes
+
+
+def _find_trades(conn, me, season, args) -> ToolResult:
+    r = trade_finder.find(conn, season, me, _blank_if_none(args.get("position")).upper() or None)
+    return ToolResult("find_trades", trade_finder.format_ideas(r), trade_finder.compact(r), data=r)
+
+
+def _player_check(conn, me, season, args) -> ToolResult:
+    c = player_check.card(conn, season, me, args["player_id"])
+    return ToolResult("player_check", player_check.format_card(c), player_check.compact(c), data=c)
+
+
+def detect_follow_up(conn, question: str, earlier_tool: str) -> dict | None:
+    """A follow-up to a trade-idea or player-check answer that Python can finish itself: another position, another player."""
+    if earlier_tool == FIND_TRADES and (position := trade_finder.position_in(question)):
+        return {"name": FIND_TRADES, "arguments": {"position": position}}
+    if earlier_tool == PLAYER_CHECK and (args := player_check.detect(conn, question, follow_up=True)):
+        return {"name": PLAYER_CHECK, "arguments": args}
+    return None
+
+
+def detect_action(conn, question: str) -> dict | None:
+    """A question Python recognizes without the model: a call dict for the trade finder or a player check, else None.
+    Like explain, these stay out of the model's tool list, because a seventh option cost routing accuracy."""
+    args = trade_finder.detect(question)
+    if args is not None:
+        return {"name": FIND_TRADES, "arguments": args}
+    args = player_check.detect(conn, question)
+    if args is not None:
+        return {"name": PLAYER_CHECK, "arguments": args}
+    return None
 
 
 def _my_team(conn, me, season, args) -> ToolResult:
@@ -603,4 +636,6 @@ _RUNNERS = {
     "waiver_targets": _waiver_targets,
     "pick_advice": _pick_advice,
     "taxi_plan": _taxi_plan,
+    FIND_TRADES: _find_trades,
+    PLAYER_CHECK: _player_check,
 }

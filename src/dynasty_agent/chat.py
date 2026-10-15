@@ -231,6 +231,13 @@ class ChatSession:
             topic = f"{last.question} {question}" if answering_explain_question else question
             return self._answer(turn, {"name": tools.EXPLAIN, "arguments": {"topic": topic}}, None, recent)
 
+        action = tools.detect_action(self.conn, question)
+        if action is None and _FOLLOW_UP.search(question):
+            earlier = next((t for t in reversed(self.history[-FOLLOW_UP_TURNS:]) if t.tool and not t.clarification), None)
+            action = tools.detect_follow_up(self.conn, question, earlier.tool) if earlier else None
+        if action is not None:  # the trade finder or a player check: Python recognizes them, the model only phrases the result
+            return self._answer(turn, action, None, recent)
+
         calls, text, route_stats = self.client.route(self._router_messages(question), tools.TOOLS)
         if not calls and last is not None and last.clarification and last.tool:
             # The reply to a question the agent asked belongs to that question: say so in one message and route again.

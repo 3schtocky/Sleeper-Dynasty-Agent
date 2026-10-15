@@ -103,6 +103,39 @@ def _taxi(c: dict, data: dict) -> list[str]:
     return pts
 
 
+def _ideas(c: dict) -> list[str]:
+    if not c["ideas"]:
+        return [f"No {c['position']} on another team would lift your best lineup enough for a package you can spare."]
+    where = "your biggest upgrade spot" if c["chosen_by"] != "asked" else "the spot you asked about"
+    pts = [f"I looked at {c['position']}, {where}, and found {len(c['ideas'])} ideas."]
+    for i, idea in enumerate(c["ideas"], 1):
+        pts.append(f"Idea {i}: get {idea['get']} for {idea['give']}. It lifts your lineup {idea['lineup_gain']} points per week, "
+                   f"and the other side would likely say: {idea['they_would_say_yes']}.")
+    pts.append("These are offers to send the other manager, not trades you can just make, and they may say no. A lowball "
+               "is only an opening bid.")
+    return pts
+
+
+def _player(c: dict) -> list[str]:
+    pts = [f"{c['name']} is a {c['position']} (age {c['age']}) {c['where']}."]
+    if c["where"].startswith("on ") and c["where"] != "on your roster":
+        pts.append("Getting him would take a trade offer to that manager, not a waiver pickup.")
+    if "lean" in c:
+        pts.append({"buy": "The market prices him below his production, so he leans buy.",
+                    "sell": "The market prices him above his production, so he leans sell.",
+                    "fair": "His price and production line up, so he is priced about right."}[c["lean"]])
+    if "win_now" in c:
+        pts.append(f"His win-now value is {c['win_now']} points per game."
+                   + (f" His market value is {c['market_value']} trade-value points." if "market_value" in c else ""))
+    else:
+        pts.append("He has no win-now value yet because there are no stats or projection for him.")
+    if "lineup_gain" in c:
+        pts.append("He would not start for you." if c["lineup_gain"].startswith("none")
+                   else f"Adding him would lift your best lineup {c['lineup_gain']} points per week.")
+    pts.append("The buy or sell read compares price with this season's production, it is not a forecast.")
+    return pts
+
+
 def build(name: str, compact: dict, data) -> list[str]:
     """The talking points for a tool result, or [] for a tool with none."""
     if name == "evaluate_trade":
@@ -115,6 +148,10 @@ def build(name: str, compact: dict, data) -> list[str]:
         return _waiver(compact)
     if name == "pick_advice":
         return _picks(compact, data["rows"])
+    if name == "find_trades":
+        return _ideas(compact)
+    if name == "player_check":
+        return _player(compact)
     if name == "taxi_plan":
         return _taxi(compact, data)
     return []

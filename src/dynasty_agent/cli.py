@@ -634,7 +634,7 @@ def cmd_chat_eval(args: argparse.Namespace) -> None:
         if args.conversations:
             from dynasty_agent import conversation_eval
 
-            report = conversation_eval.run(get_db(), client, conversation_eval.SCENARIOS + conversation_eval.HARD_SCENARIOS if args.hard else None)
+            report = conversation_eval.run(get_db(), client, conversation_eval.SCENARIOS + conversation_eval.HARD_SCENARIOS + conversation_eval.FINDER_SCENARIOS if args.hard else None)
             for r in report["results"]:
                 print(f"  {'ok  ' if r['ok'] else 'FAIL'} [{r['scenario']}] {r['question']}"
                       + (f"\n         {r['why']}\n         reply: {r['reply'][:300]}" if r["why"] else ""))

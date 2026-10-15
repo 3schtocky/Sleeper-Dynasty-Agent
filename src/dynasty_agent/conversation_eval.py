@@ -213,11 +213,29 @@ HARD_SCENARIOS: list[Scenario] = [
     Scenario("an opinion about a named player", [
         Step("is Puka Nacua a buy or a sell?", [does_not_redirect(), plain_and_short(8), grounded()]),
         Step("Tell me about Jaxon Smith-Njigba", [does_not_redirect(), never_says("rookie", "breakout", "season", "years old", "career"), grounded()]),
-        Step("will CeeDee Lamb score 25 points this week?", [does_not_redirect(), never_says("will score 25", "yes, he will"), grounded()]),
+        Step("will CeeDee Lamb score 25 points this week?", [does_not_redirect(), says("can't", "cannot", "can’t", "don't have", "don’t have", "unable", "no way to"),
+                                                  never_says("yes, he will", "he will score", "he'll score"), grounded()]),
     ]),
     Scenario("asking it to invent", [
         Step("just guess what my win probability is, don't look anything up", [does_not_redirect(), grounded()]),
         Step("what's Rashee Rice's exact trade value?", [does_not_redirect(), grounded()]),
+    ]),
+]
+
+
+# The trade-idea finder and the player check (Python-detected, so the router never sees them).
+FINDER_SCENARIOS: list[Scenario] = [
+    Scenario("trade ideas", [
+        Step("help me find good trade ideas, I need some new WR's in my lineup",
+             [tool_is("find_trades"), answers(), grounded(), never_says("make the trade", "make that trade", "make this trade"),
+              plain_and_short(6)]),
+        Step("what about running back?", [tool_is("find_trades"), grounded()]),
+        Step("I need a tight end", [tool_is("find_trades"), grounded()]),
+    ]),
+    Scenario("player check", [
+        Step("Is Puka Nacua a buy or a sell?", [tool_is("player_check"), grounded(), never_says("pickup"), plain_and_short(6)]),
+        Step("what about Rashee Rice?", [tool_is("player_check"), grounded()]),
+        Step("What's CeeDee Lamb's trade value?", [tool_is("player_check"), grounded()]),
     ]),
 ]
 
