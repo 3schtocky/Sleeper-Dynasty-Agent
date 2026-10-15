@@ -9,8 +9,9 @@ def test_plist_uses_absolute_paths_launchd_can_run():
     plist = schedule.build_plist("/Users/me/proj/.venv/bin/dynasty-agent", Path("/Users/me/proj"), 6, 30, Path("/Users/me/proj/data/logs/refresh.log"))
     assert plist["ProgramArguments"] == ["/Users/me/proj/.venv/bin/dynasty-agent", "refresh"]
     assert plist["StartCalendarInterval"] == {"Hour": 6, "Minute": 30}
-    assert plist["EnvironmentVariables"]["PATH"].startswith("/Users/me/proj/.venv/bin:")
-    assert plist["StandardOutPath"] == plist["StandardErrorPath"] == "/Users/me/proj/data/logs/refresh.log"
+    # The plist is macOS-only, but the test runs anywhere: expect the paths as Path writes them on this OS.
+    assert plist["EnvironmentVariables"]["PATH"].startswith(f"{Path('/Users/me/proj/.venv/bin')}:")
+    assert plist["StandardOutPath"] == plist["StandardErrorPath"] == str(Path("/Users/me/proj/data/logs/refresh.log"))
 
 
 def test_parse_time():

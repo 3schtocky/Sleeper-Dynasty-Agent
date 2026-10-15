@@ -211,7 +211,7 @@ def test_pick_report_builds_the_draft_board_once(conn, monkeypatch):
 
 def test_fantasycalc_response_is_parsed_once_until_it_is_refetched(conn, monkeypatch):
     import json as json_module
-    from datetime import datetime, timezone
+    from datetime import datetime, timedelta, timezone
 
     key = "fantasycalc:values/current:" + json_module.dumps(market.FANTASYCALC_PARAMS, sort_keys=True)
     now = datetime.now(timezone.utc).isoformat()
@@ -219,6 +219,6 @@ def test_fantasycalc_response_is_parsed_once_until_it_is_refetched(conn, monkeyp
     market._parsed.clear()
     first = market.fetch_values(conn)
     assert market.fetch_values(conn) is first  # same parsed list, no second json.loads
-    later = datetime.now(timezone.utc).isoformat()
+    later = (datetime.now(timezone.utc) + timedelta(seconds=1)).isoformat()  # Windows' clock ticks every ~15 ms: "now" twice can repeat
     conn.execute("UPDATE api_cache SET response_json = '[{\"v\": 2}]', fetched_at = ? WHERE cache_key = ?", (later, key))
     assert market.fetch_values(conn) == [{"v": 2}]  # a refetch is seen at once
