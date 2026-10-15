@@ -18,7 +18,7 @@ import re
 import sqlite3
 from dataclasses import dataclass, field
 
-from dynasty_agent import context, explain, formatters, picks, taxi, valuation, weekly
+from dynasty_agent import context, explain, formatters, picks, points, taxi, valuation, weekly
 from dynasty_agent.valuation import AmbiguousPlayer, PlayerNotFound
 
 _LIST = {"type": "array", "items": {"type": "string"}}
@@ -164,7 +164,10 @@ def run_tool(conn: sqlite3.Connection, name: str, args: dict | None, recent: lis
     try:
         if name == EXPLAIN:
             return _explain(conn, me, season, args, recent or [])
-        return _RUNNERS[name](conn, me, season, args)
+        result = _RUNNERS[name](conn, me, season, args)
+        if not result.clarification and result.take:
+            result.compact["facts"] = points.build(name, result.compact, result.data)
+        return result
     except (AmbiguousPlayer, PlayerNotFound) as e:
         return ToolResult(name, clarification=_clarify(e))
     except ValueError as e:

@@ -32,7 +32,7 @@ OLLAMA_URL = (os.environ.get("OLLAMA_URL") or "http://localhost:11434").rstrip("
 KEEP_ALIVE = "30m"
 # Routing is a decision, not prose: temperature 0, the same answer every time.
 ROUTE_OPTIONS = {"num_ctx": 8192, "temperature": 0, "num_predict": 200}
-TAKE_OPTIONS = {"num_ctx": 8192, "temperature": 0.2, "num_predict": 160}
+TAKE_OPTIONS = {"num_ctx": 8192, "temperature": 0.3, "num_predict": 220}
 # Free conversation: warmer and longer than a take.
 CHAT_OPTIONS = {"num_ctx": 8192, "temperature": 0.6, "num_predict": 400}
 TOPIC_OPTIONS = {"num_ctx": 2048, "temperature": 0, "num_predict": 4}
