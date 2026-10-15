@@ -184,6 +184,7 @@ class ChatSession:
         self.width = width or shutil.get_terminal_size((100, 20)).columns
         self.show_stats = True
         self.history: list[Turn] = []
+        self.last_dropped: list[str] = []
 
     def say(self, text: str = "", end: str = "\n") -> None:
         self.out.write(text + end)
@@ -318,7 +319,7 @@ class ChatSession:
 
     def _stream_checked(self, messages: list[dict], allowed: set[str], options: dict | None,
                         check=grounding.ungrounded) -> tuple[str, llm.Stats | None]:
-        """Stream a reply one checked sentence at a time; stop at the first sentence `check` flags."""
+        """Stream a reply one checked sentence at a time; a sentence `check` flags is left out."""
         stats: list[llm.Stats] = []
 
         def text_only(events):
@@ -329,16 +330,14 @@ class ChatSession:
                     yield event
 
         shown = []
-        stream = self.client.stream(messages, options=options)
-        for sentence in sentences(text_only(stream)):
+        self.last_dropped = []
+        for sentence in sentences(text_only(self.client.stream(messages, options=options))):
             sentence = _PLAIN.sub("", sentence)
             bad = check(sentence, allowed)
             if bad:
-                self.say(self._dim(f"(The rest of the model's note quoted {', '.join(sorted(bad))}, which isn't in the "
-                                   f"numbers above, so it's left out. The numbers above stand on their own.)"))
-                for _ in text_only(stream):  # finish the reply so the stats are exact
-                    pass
-                break
+                # Skip just this sentence; the rest may be fine. The user sees nothing about it, /raw lists it.
+                self.last_dropped.append(f"{sentence.strip()} [numbers not allowed: {', '.join(sorted(bad))}]")
+                continue
             shown.append(sentence)
             self.say(sentence, end=" ")
         if shown:
@@ -364,7 +363,8 @@ class ChatSession:
             if last is None:
                 self.say("Nothing yet: ask a question first.")
             else:
-                self.say(json.dumps({"tool": last.tool, "arguments": last.arguments, "summary_given_to_model": last.compact}, indent=2))
+                self.say(json.dumps({"tool": last.tool, "arguments": last.arguments, "summary_given_to_model": last.compact,
+                                     "sentences_left_out": self.last_dropped}, indent=2))
         else:
             self.say(f"Unknown command /{word}. Try /help.")
         return True

@@ -53,14 +53,16 @@ def test_numbers_block_then_a_grounded_take_then_stats(fake_tool):
     assert "fake:4b · 30.0 tok/s · first words 0.4s · tool: evaluate_trade" in out
 
 
-def test_a_sentence_with_an_invented_number_is_never_shown(fake_tool):
+def test_a_sentence_with_an_invented_number_is_left_out_and_the_rest_is_kept(fake_tool):
     s = session(FakeModel([([{"name": "evaluate_trade", "arguments": {}}], "")],
-                          [["Don't do it. ", "You'd lose about 300 points. ", "Also 5 more things."]]))
+                          [["Don't do it. ", "You'd lose about 300 points. ", "It nets -221."]]))
     turn = s.ask("Should I trade Coleman?")
     out = s.out.getvalue()
-    assert "Don't do it." in out and "lose about 300" not in out
-    assert "quoted 300, which isn't in the numbers above" in out
-    assert "5 more things" not in out and turn.reply == "Don't do it."
+    assert "Don't do it." in out and "It nets -221." in out and "lose about 300" not in out
+    assert "isn't in the numbers" not in out and "rest of the model" not in out  # no debug text for the user
+    assert turn.reply == "Don't do it. It nets -221."
+    s.command("/raw")
+    assert "You'd lose about 300 points." in s.out.getvalue() and "numbers not allowed: 300" in s.out.getvalue()
 
 
 def test_talk_reply_with_a_made_up_number_is_cut(fake_tool):
@@ -149,7 +151,7 @@ def test_an_explanation_may_quote_the_answer_it_is_explaining_but_never_an_inven
     s.ask("why?")
     out = s.out.getvalue()
     assert "That gives 14.7." in out and "the -221" in out  # -221 came from the earlier answer, so it is grounded
-    assert "about 90 points" not in out and "quoted 90" in out
+    assert "about 90 points" not in out and "quoted" not in out
 
 
 def test_a_definition_is_shown_as_is_with_no_model_take_and_no_hint(explain_tools):
