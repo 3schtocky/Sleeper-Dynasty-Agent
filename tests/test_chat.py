@@ -72,6 +72,37 @@ def test_talk_reply_with_a_made_up_number_is_cut(fake_tool):
     assert "Happy to talk it through." in out and "142 points" not in out
 
 
+def test_a_talk_reply_stops_at_five_sentences_and_keeps_the_stats_line(fake_tool):
+    eight = [f"Point {i} matters. " for i in range(1, 9)]
+    s = session(FakeModel([([], "I can help with lineups and trades.")], [["fantasy"], eight]))
+    turn = s.ask("what should I do")
+    assert turn.reply.count("matters") == chat.TALK_SENTENCES
+    assert "Point 5 matters." in turn.reply and "Point 6" not in s.out.getvalue()
+    assert "tool: none" in s.out.getvalue()  # the stream was still read to its end
+    assert any("over the 5-sentence limit" in d for d in s.last_dropped)
+
+
+def test_a_shorter_talk_reply_is_untouched(fake_tool):
+    s = session(FakeModel([([], "x")], [["fantasy"], ["Buy young receivers. They hold value. Sell aging backs."]]))
+    assert s.ask("buy or sell?").reply == "Buy young receivers. They hold value. Sell aging backs."
+
+
+@pytest.mark.parametrize("endorsement", ["Make that trade in the Sleeper app.", "I'd take the deal.", "Accept this offer today."])
+def test_trade_ideas_are_never_endorsed(fake_tool, endorsement):
+    s = session(FakeModel([([{"name": "find_trades", "arguments": {}}], "")],
+                          [["Puka Nacua adds the most points per week. ", endorsement + " ", "Each offer is a lowball."]]))
+    turn = s.ask("help me find good trade ideas")
+    out = turn.reply
+    assert "Puka Nacua adds the most points per week." in out and "Each offer is a lowball." in out
+    assert endorsement not in out
+
+
+def test_a_trade_verdict_from_the_trade_tool_may_still_say_to_make_the_move(fake_tool):
+    s = session(FakeModel([([{"name": "evaluate_trade", "arguments": {}}], "")],
+                          [["Make that trade in the Sleeper app. ", "It nets -221."]]))
+    assert "Sleeper app" in s.ask("Should I trade Coleman?").reply
+
+
 def test_a_no_tool_question_is_answered_by_the_chat_prompt_not_the_router_text(fake_tool):
     model = FakeModel([([], "I can help with lineups and trades.")], [["fantasy"], ["Great question. Buying young WRs is usually the dynasty move."]])
     s = session(model)

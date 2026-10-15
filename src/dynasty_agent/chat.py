@@ -164,6 +164,13 @@ FOLLOW_UP_TURNS = 4
 # The model sometimes writes markdown anyway; a terminal shows it literally.
 _PLAIN = re.compile(r"\*+|__|`|^#+\s*", re.M)
 
+# CHAT_SYSTEM asks for at most five sentences and the 4B model sometimes writes eight; the sixth on is never shown.
+TALK_SENTENCES = 5
+# The trade finder lists ideas, most of them lowball offers, and never endorses one. A sentence that tells the user to
+# make a trade, or to make a move in the Sleeper app, is left out of its take.
+_TELLS_TO_TRADE = re.compile(r"\b(?:make|take|accept|do|pull the trigger on)\s+(?:that|this|the|it)\s+(?:trade|deal|offer)\b"
+                             r"|\bsleeper app\b", re.I)
+
 
 def _is_generic(call: dict) -> bool:
     """True when a tool call names a description instead of a player, so the question is strategy talk."""
@@ -256,8 +263,10 @@ class ChatSession:
             calls, text, route_stats = self.client.route(
                 [{"role": "system", "content": ROUTE_SYSTEM}, {"role": "user", "content": merged}], tools.TOOLS)
         if not calls or _is_generic(calls[0]):
+            if (recovered := tools.trade_from_text(self.conn, question)) is not None:
+                return self._answer(turn, recovered, route_stats, recent)  # the model refused a plain trade question
             return self._talk(turn)
-        return self._answer(turn, calls[0], route_stats, recent)
+        return self._answer(turn, tools.repair_trade_call(question, calls[0]), route_stats, recent)
 
     def _answer(self, turn: Turn, call: dict, route_stats: llm.Stats | None, recent: list[tools.ToolResult]) -> Turn:
         question = turn.question
@@ -311,7 +320,8 @@ class ChatSession:
         facts = " ".join(result.compact.get("facts", []))
 
         def check(sentence: str, ok: set[str]) -> set[str]:
-            return grounding.ungrounded(sentence, ok) or set(risk_talk.contradicts(sentence, facts))
+            endorses = {"tells you to make a trade"} if result.name == tools.FIND_TRADES and _TELLS_TO_TRADE.search(sentence) else set()
+            return grounding.ungrounded(sentence, ok) or set(risk_talk.contradicts(sentence, facts)) or endorses
 
         shown, stats = self._stream_checked(messages, allowed, llm.EXPLAIN_OPTIONS if explaining else None, check=check)
         self._stats(stats, call["name"])
@@ -337,7 +347,8 @@ class ChatSession:
         known = [r.numbers for r in self._recent_results()] + [t.reply for t in earlier]
         reply, stats = self._stream_checked(
             messages, grounding.allowed_numbers(turn.question, reference, *known), llm.CHAT_OPTIONS,
-            check=lambda sentence, ok: grounding.unsupported_claims(sentence, ok) or set(risk_talk.talk_claims_risk(sentence)))
+            check=lambda sentence, ok: grounding.unsupported_claims(sentence, ok) or set(risk_talk.talk_claims_risk(sentence)),
+            limit=TALK_SENTENCES)
         turn.reply = reply or "I can help with lineups, trades, team outlook, waivers, draft picks, taxi and IR."
         if not reply:
             self.say(turn.reply)
@@ -364,8 +375,9 @@ class ChatSession:
         return "other" not in text.lower()
 
     def _stream_checked(self, messages: list[dict], allowed: set[str], options: dict | None,
-                        check=grounding.ungrounded) -> tuple[str, llm.Stats | None]:
-        """Stream a reply one checked sentence at a time; a sentence `check` flags is left out."""
+                        check=grounding.ungrounded, limit: int | None = None) -> tuple[str, llm.Stats | None]:
+        """Stream a reply one checked sentence at a time; a sentence `check` flags is left out, and with a `limit`
+        the sentences after that many are left out too. The stream is still read to its end, so the stats line stays."""
         stats: list[llm.Stats] = []
 
         def text_only(events):
@@ -379,6 +391,9 @@ class ChatSession:
         self.last_dropped = []
         for sentence in sentences(text_only(self.client.stream(messages, options=options))):
             sentence = _PLAIN.sub("", sentence)
+            if limit is not None and len(shown) >= limit:
+                self.last_dropped.append(f"{sentence.strip()} [over the {limit}-sentence limit]")
+                continue
             bad = check(sentence, allowed)
             if bad:
                 # Skip just this sentence; the rest may be fine. The user sees nothing about it, /raw lists it.

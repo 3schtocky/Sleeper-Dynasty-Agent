@@ -180,7 +180,12 @@ def first_call(calls: list[dict]) -> dict | None:
     return calls[0] if calls else None
 
 
-def score(case: Case, call: dict | None) -> tuple[bool, str]:
+def score(case: Case, call: dict | None, conn=None) -> tuple[bool, str]:
+    """Score the call the chat would act on: the model's, repaired by tools.repair_trade_call, or, when the model
+    made none and a database is given, the trade tools.trade_from_text builds."""
+    call = tools.repair_trade_call(case.question, call)
+    if call is None and conn is not None:
+        call = tools.trade_from_text(conn, case.question)
     got = call["name"] if call else None
     if got not in case.tools:
         return False, f"routed to {got}, wanted {' or '.join(str(t) for t in case.tools)}"
@@ -189,7 +194,7 @@ def score(case: Case, call: dict | None) -> tuple[bool, str]:
     return True, ""
 
 
-def run_live(client, record: bool = False) -> dict:
+def run_live(client, record: bool = False, conn=None) -> dict:
     """Route every case through the real model with the chat's own prompt and
     tools; score it; optionally save the raw answers for the offline test."""
     recorded, results, started = {}, [], time.monotonic()
@@ -197,7 +202,7 @@ def run_live(client, record: bool = False) -> dict:
         messages = [{"role": "system", "content": chat.ROUTE_SYSTEM}, {"role": "user", "content": case.question}]
         calls, text, stats = client.route(messages, tools.TOOLS)
         call = first_call(calls)
-        ok, why = score(case, call)
+        ok, why = score(case, call, conn)
         recorded[case.question] = {"calls": calls, "text": text}
         results.append({"question": case.question, "kind": case.kind, "ok": ok, "why": why,
                         "seconds": round(stats.total_s, 2)})

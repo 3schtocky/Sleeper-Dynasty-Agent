@@ -393,6 +393,66 @@ def fix_sides(conn, me: int, send: list[str], receive: list[str], send_picks: li
     return new_send, new_receive, send_picks, receive_picks, notes
 
 
+_MY_OFFER = re.compile(r"\bmy\b.*?(?:\b(?:19|20)\d{2}\b|\b(?:1st|2nd|3rd|first|second|third|round|picks?)\b)", re.I | re.S)
+_TRADE_WORDS = re.compile(r"\b(?:trade|swap|deal|give|offer\w*|straight up|for)\b", re.I)
+
+
+def repair_trade_call(question: str, call: dict | None) -> dict | None:
+    """Fix a trade the 4B model wrote with the sides crossed where the wording settles it and fix_sides cannot,
+    because a free agent has no owner: "trade my 2027 round 1 pick for Trey Benson" came back with Benson in
+    send_players. When the user offers their own pick before the word "for", a player named only after it is what
+    they get. A copy of the same item on the other side is dropped. Anything else passes through untouched."""
+    if not call or call.get("name") != "evaluate_trade":
+        return call
+    m = re.search(r"\bfor\b", question, re.I)
+    if not m or not _MY_OFFER.search(question[:m.start()]):
+        return call
+    before, after = question[:m.start()].lower(), question[m.end():].lower()
+    args = dict(call.get("arguments") or {})
+    send_players, receive_players = _as_list(args.get("send_players")), _as_list(args.get("receive_players"))
+
+    def named_after_only(n: str) -> bool:
+        low = n.lower()
+        last = low.split()[-1] if low.split() else low
+        return (low in after or last in after) and last not in before
+
+    moved = [n for n in send_players if named_after_only(n)]
+    if not moved:
+        return call
+    args["send_players"] = [n for n in send_players if n not in moved]
+    args["receive_players"] = receive_players + [n for n in moved if n.lower() not in [r.lower() for r in receive_players]]
+    send_picks = _as_list(args.get("send_picks"))
+    args["receive_picks"] = [p for p in _as_list(args.get("receive_picks")) if p not in send_picks]
+    return {**call, "arguments": args}
+
+
+def trade_from_text(conn, question: str) -> dict | None:
+    """A trade call built by Python when the model made no tool call at all ("Can I get Puka Nacua for CeeDee Lamb
+    straight up?" came back as a refusal). It needs trade wording, two or more named players, and rosters that place
+    every one of them: the user's own players are what they send, another team's are what they get, the same rule
+    fix_sides applies. A free agent, a pick or a single player is left to the model, so this never guesses a side."""
+    if conn is None or not _TRADE_WORDS.search(question):
+        return None
+    ids = player_check.named_player_ids(conn, question)
+    if len(ids) < 2:
+        return None
+    me = context.my_roster_id(conn)
+    mine, theirs = [], []
+    for pid in ids:
+        row = conn.execute("SELECT roster_id FROM roster_players WHERE player_id = ?", (pid,)).fetchone()
+        if row is None:
+            return None
+        (mine if row[0] == me else theirs).append(pid)
+    if not mine or not theirs:
+        return None
+
+    def names(pids):
+        return [conn.execute("SELECT full_name FROM players WHERE player_id = ?", (p,)).fetchone()[0] for p in pids]
+
+    return {"name": "evaluate_trade", "arguments": {"send_players": names(mine), "receive_players": names(theirs),
+                                                    "send_picks": [], "receive_picks": []}}
+
+
 def _find_trades(conn, me, season, args) -> ToolResult:
     r = trade_finder.find(conn, season, me, _blank_if_none(args.get("position")).upper() or None)
     return ToolResult("find_trades", trade_finder.format_ideas(r), trade_finder.compact(r), data=r)

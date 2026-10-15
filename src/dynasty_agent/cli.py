@@ -650,7 +650,7 @@ def cmd_chat_eval(args: argparse.Namespace) -> None:
                       + (f"\n         {r['why']}\n         reply: {r['reply'][:300]}" if r["why"] else ""))
             print(f"\n{client.model}: {report['passed']} of {report['total']} conversation steps passed, {report['seconds']}s.")
             return
-        report = chat_eval.run_live(client, record=args.record)
+        report = chat_eval.run_live(client, record=args.record, conn=get_db())
     for r in report["results"]:
         print(f"  {'ok  ' if r['ok'] else 'FAIL'} {r['seconds']:>5.2f}s  [{r['kind']}] {r['question']}"
               + (f"\n         {r['why']}" if r["why"] else ""))
