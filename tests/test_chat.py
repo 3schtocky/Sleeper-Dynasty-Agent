@@ -22,6 +22,8 @@ class FakeModel:
 
     def stream(self, messages, options=None):
         self.options = options
+        self.talk_messages = getattr(self, "talk_messages", [])
+        self.talk_messages.append(messages)
         for piece in self.takes.pop(0):
             yield piece
         yield llm.Stats("fake:4b", eval_count=60, eval_duration_ns=2 * 10**9, first_token_s=0.4)
@@ -239,3 +241,55 @@ def test_markdown_is_stripped_from_talk(fake_tool):
     s = session(FakeModel([([], "x")], [["fantasy"], ["**Buy** young WRs."]]))
     s.ask("strategy?")
     assert "Buy young WRs." in s.out.getvalue() and "**" not in s.out.getvalue()
+
+
+def test_a_description_instead_of_a_player_is_talk_not_a_lookup(fake_tool):
+    call = {"name": "evaluate_trade", "arguments": {"send_players": ["28 year old RB"], "receive_players": ["young WR"]}}
+    model = FakeModel([([call], "")], [["fantasy"], ["Usually sell the back."]])
+    s = session(model)
+    turn = s.ask("How should I think about trading a 28 year old RB for a young WR?")
+    assert turn.tool is None and "Usually sell the back." in s.out.getvalue()
+
+
+def test_a_real_player_name_is_still_a_tool_call(fake_tool):
+    call = {"name": "evaluate_trade", "arguments": {"send_players": ["Jonah Coleman"], "receive_players": []}}
+    s = session(FakeModel([([call], "")], [["Fine."]]))
+    assert s.ask("Trade Jonah Coleman?").tool == "evaluate_trade"
+
+
+def test_talk_sees_earlier_turns_and_may_quote_their_numbers(fake_tool):
+    model = FakeModel([([{"name": "evaluate_trade", "arguments": {}}], ""), ([], "x")],
+                      [["Fine."], ["fantasy"], ["That -221 is small, so it is close."]])
+    s = session(model)
+    s.ask("Should I trade Coleman?")
+    s.ask("is that a big gap?")
+    assert "-221 is small" in s.out.getvalue()
+    # the model.stream call for talk carried the earlier question and answer
+    assert model.talk_messages[-1][1:3] == [{"role": "user", "content": "Should I trade Coleman?"}, {"role": "assistant", "content": "Fine."}]
+
+
+def test_a_follow_up_is_routed_with_the_earlier_question(fake_tool):
+    model = FakeModel([([{"name": "evaluate_trade", "arguments": {}}], "")] * 2, [["Fine."], ["Fine."]])
+    s = session(model)
+    s.ask("Should I trade Coleman for Puka?")
+    s.ask("what if I add Lamb?")
+    assert "Earlier question: Should I trade Coleman for Puka?" in model.seen[-1][-1]["content"]
+    assert model.seen[-1][-1]["content"].endswith("Follow-up: what if I add Lamb?")
+
+
+def test_an_unrelated_question_after_a_tool_turn_is_routed_alone(fake_tool):
+    model = FakeModel([([{"name": "evaluate_trade", "arguments": {}}], "")] * 2, [["Fine."], ["Fine."]])
+    s = session(model)
+    s.ask("Should I trade Coleman for Puka?")
+    s.ask("Who should I start this week?")
+    assert model.seen[-1][-1]["content"] == "Who should I start this week?"
+
+
+def test_the_topic_check_sees_the_previous_question(fake_tool):
+    model = FakeModel([([{"name": "evaluate_trade", "arguments": {}}], ""), ([], "x")],
+                      [["Fine."], ["fantasy"], ["Not really."]])
+    s = session(model)
+    s.ask("Should I trade Coleman?")
+    s.ask("is that a big gap?")
+    topic_call = model.talk_messages[1]
+    assert "Previous message: Should I trade Coleman?" in topic_call[-1]["content"]

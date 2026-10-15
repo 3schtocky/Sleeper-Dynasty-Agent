@@ -144,8 +144,22 @@ def sentences(pieces: Iterable[str]) -> Iterator[str]:
         yield buffer.strip()
 
 
+# A follow-up that only makes sense with the last question in view: "what if I add Lamb?", "and him?", "what about Puka instead".
+_FOLLOW_UP = re.compile(r"^(and|but|what if|what about|how about|ok(ay)?,? (and|what|how)|instead|also)\b|\b(him|her|them|that (trade|player|pick|deal)|instead)\b", re.I)
+# A "player" the router invented from a description ("28 year old RB", "a young WR"): a strategy question, not a lookup.
+_GENERIC_PLAYER = re.compile(r"\d|\b(year|old|young|veteran|rookie|aging|a|an|some|any|guy|player)\b", re.I)
+# Earlier turns the talk path can see.
+TALK_TURNS = 6
+
 # The model sometimes writes markdown anyway; a terminal shows it literally.
 _PLAIN = re.compile(r"\*+|__|`|^#+\s*", re.M)
+
+
+def _is_generic(call: dict) -> bool:
+    """True when a tool call names a description instead of a player, so the question is strategy talk."""
+    args = call.get("arguments") or {}
+    names = [*(args.get("send_players") or []), *(args.get("receive_players") or []), args.get("player") or ""]
+    return any(isinstance(n, str) and _GENERIC_PLAYER.search(n) for n in names)
 
 
 @dataclass
@@ -189,6 +203,8 @@ class ChatSession:
         if last is not None and last.clarification:
             messages.append({"role": "user", "content": last.question})
             messages.append({"role": "assistant", "content": last.reply})
+        elif last is not None and last.tool and _FOLLOW_UP.search(question):
+            question = f"Earlier question: {last.question}\nFollow-up: {question}"
         messages.append({"role": "user", "content": question})
         return messages
 
@@ -204,7 +220,7 @@ class ChatSession:
             return self._answer(turn, {"name": tools.EXPLAIN, "arguments": {"topic": topic}}, None, recent)
 
         calls, text, route_stats = self.client.route(self._router_messages(question), tools.TOOLS)
-        if not calls:
+        if not calls or _is_generic(calls[0]):
             return self._talk(turn)
         return self._answer(turn, calls[0], route_stats, recent)
 
@@ -257,16 +273,23 @@ class ChatSession:
     def _talk(self, turn: Turn) -> Turn:
         """No tool fits: chat about fantasy football in the model's own words.
         Numbers still pass the grounding check: only the question's own
-        numbers and those in the vetted reference are allowed."""
-        if not self._on_topic(turn.question):
+        numbers, the vetted reference and the recent conversation are allowed."""
+        if not self._on_topic(turn.question, self.history[-1].question if self.history else None):
             turn.reply = OFF_TOPIC_REPLY
             self.say(OFF_TOPIC_REPLY)
             self.history.append(turn)
             return turn
         reference = knowledge.reference(self.conn)
         system = f"{CHAT_SYSTEM}\n\nReference (true; use it and never contradict it):\n{reference}"
-        messages = [{"role": "system", "content": system}, {"role": "user", "content": turn.question}]
-        reply, stats = self._stream_checked(messages, grounding.allowed_numbers(turn.question, reference), llm.CHAT_OPTIONS)
+        earlier = [t for t in self.history[-TALK_TURNS:] if t.reply and not t.clarification]
+        messages = [{"role": "system", "content": system}]
+        for t in earlier:
+            messages += [{"role": "user", "content": t.question}, {"role": "assistant", "content": t.reply}]
+        messages.append({"role": "user", "content": turn.question})
+        # Numbers the user was already shown, or the model already said, stay quotable.
+        known = [r.numbers for r in self._recent_results()] + [t.reply for t in earlier]
+        reply, stats = self._stream_checked(
+            messages, grounding.allowed_numbers(turn.question, reference, *known), llm.CHAT_OPTIONS)
         turn.reply = reply or "I can help with lineups, trades, team outlook, waivers, draft picks, taxi and IR."
         if not reply:
             self.say(turn.reply)
@@ -274,10 +297,13 @@ class ChatSession:
         self.history.append(turn)
         return turn
 
-    def _on_topic(self, question: str) -> bool:
+    def _on_topic(self, question: str, previous: str | None = None) -> bool:
         """A one-word model call, far more reliable on a 4B model than an
-        instruction buried in the chat prompt. Anything but "other" passes."""
-        messages = [{"role": "system", "content": TOPIC_SYSTEM}, {"role": "user", "content": question}]
+        instruction buried in the chat prompt. Anything but "other" passes.
+        The previous question is shown so a follow-up ("is that a big gap?")
+        is judged in context."""
+        shown = f"Previous message: {previous}\nMessage to classify: {question}" if previous else question
+        messages = [{"role": "system", "content": TOPIC_SYSTEM}, {"role": "user", "content": shown}]
         text = "".join(e for e in self.client.stream(messages, options=llm.TOPIC_OPTIONS) if isinstance(e, str))
         return "other" not in text.lower()
 
