@@ -337,7 +337,7 @@ class ChatSession:
         known = [r.numbers for r in self._recent_results()] + [t.reply for t in earlier]
         reply, stats = self._stream_checked(
             messages, grounding.allowed_numbers(turn.question, reference, *known), llm.CHAT_OPTIONS,
-            check=grounding.unsupported_claims)
+            check=lambda sentence, ok: grounding.unsupported_claims(sentence, ok) or set(risk_talk.talk_claims_risk(sentence)))
         turn.reply = reply or "I can help with lineups, trades, team outlook, waivers, draft picks, taxi and IR."
         if not reply:
             self.say(turn.reply)

@@ -159,3 +159,17 @@ def contradicts(sentence: str, facts: str) -> list[str]:
     if "Bottom line" in facts and _DIRECTS_THE_MOVE.search(sentence):
         out.append("directs the move, the bottom line leaves it to the user")
     return out
+
+
+_INJURY_WORDS = re.compile(r"injur|durab|games? missed|miss(es|ed|ing)? (a lot of )?games", re.I)
+_NAME_OR_NUMBER = re.compile(r"\d|\b[A-Z][a-z]+(?:'[a-z]+)? [A-Z][a-z]+")
+
+
+def talk_claims_risk(sentence: str) -> list[str]:
+    """Free talk has no injury data. A sentence there that ties injuries or
+    durability to a named player or a number is the model repeating or
+    inventing a risk read ("Odunze has a lower injury rate"), so it is left
+    out; the risk check is the only place a player's risk is stated."""
+    if _INJURY_WORDS.search(sentence) and _NAME_OR_NUMBER.search(sentence):
+        return ["states a player's injury risk in free talk"]
+    return []

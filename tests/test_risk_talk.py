@@ -267,3 +267,11 @@ def test_the_chat_leaves_such_a_sentence_out_and_keeps_the_rest(monkeypatch):
     text = s._take("q", {"name": "evaluate_trade", "arguments": {}}, result, [])
     assert "weigh Daniels" in text and "Sleeper app" not in text
     assert any("contradicts the facts" in d and "Sleeper app" in d for d in s.last_dropped)
+
+
+def test_free_talk_may_not_state_a_players_injury_risk():
+    assert risk_talk.talk_claims_risk("Puka Nacua has a 2.4-game injury risk per 17.")
+    assert risk_talk.talk_claims_risk("Rome Odunze has a lower injury rate and more consistency.")
+    assert risk_talk.talk_claims_risk("Injuries to running backs are common.") == []              # general talk is fine
+    assert risk_talk.talk_claims_risk("Durability matters more for older players.") == []
+    assert risk_talk.talk_claims_risk("Odunze is young and productive.") == []
