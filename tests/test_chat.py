@@ -300,3 +300,20 @@ def test_talk_may_mention_an_age_but_not_invent_a_stat(fake_tool):
     s.ask("when do backs fade?")
     out = s.out.getvalue()
     assert "age 27." in out and "20 points" not in out
+
+
+def test_a_reply_that_routes_nowhere_after_a_clarification_is_routed_again_with_the_question(fake_tool):
+    call = {"name": "evaluate_trade", "arguments": {}}
+    model = FakeModel([([{"name": "evaluate_trade", "arguments": {"ambiguous": True}}], ""), ([], "ok"), ([call], "")],
+                      [["Fine."]])
+    s = session(model)
+    s.ask("Trade Walker for Puka?")
+    turn = s.ask("I meant the RB")
+    assert turn.tool == "evaluate_trade"
+    assert model.seen[-1][-1]["content"] == "Trade Walker for Puka? (I meant the RB)"
+
+
+def test_a_pick_listed_among_the_players_is_not_mistaken_for_a_description(fake_tool):
+    call = {"name": "evaluate_trade", "arguments": {"send_players": ["2028 2nd"], "receive_players": ["Jonah Coleman"]}}
+    s = session(FakeModel([([call], "")], [["Fine."]]))
+    assert s.ask("I'd get Jonah Coleman for my 2028 2nd").tool == "evaluate_trade"

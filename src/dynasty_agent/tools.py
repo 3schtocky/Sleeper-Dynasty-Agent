@@ -223,6 +223,10 @@ def _evaluate_trade(conn, me, season, args) -> ToolResult:
         return ToolResult("evaluate_trade", clarification="What would you send and what would you get back?")
     send_players = [_pin(conn, n) for n in send_players]
     receive_players = [_pin(conn, n) for n in receive_players]
+    false_premise = false_premise_players(send_players, receive_players, send_specs, receive_specs,
+                                          lambda n: _owner(conn, n), me)
+    if false_premise:
+        return ToolResult("evaluate_trade", clarification=_premise_question(conn, false_premise, me))
     send_players, receive_players, send_specs, receive_specs, side_notes = fix_sides(
         conn, me, send_players, receive_players, send_specs, receive_specs
     )
@@ -238,8 +242,10 @@ def _evaluate_trade(conn, me, season, args) -> ToolResult:
             f"{pk['label']} (value {pk['model_value']:.0f})" if pk["model_value"] is not None else f"{pk['label']} (no price)"
             for pk in s["picks"]]
 
+    own_warnings = list(r["warnings"])
     r["warnings"][:0] = side_notes
     compact = {
+        **({"headline": own_warnings[0]} if own_warnings else {}),
         "user_sends": side(r["sent"]),
         "user_receives": side(r["received"]),
         "net_market_value": f"{r['market_value_delta']:+.0f}",
@@ -251,6 +257,49 @@ def _evaluate_trade(conn, me, season, args) -> ToolResult:
         "units": "market values are FantasyCalc trade-value points, not dollars; win-now is points per game",
     }
     return ToolResult("evaluate_trade", formatters.format_trade(r, season), compact, data=r)
+
+
+def _owner(conn, name: str) -> int | None:
+    """The roster_id that holds this player, or None for a free agent or an unknown name."""
+    try:
+        pid = valuation.resolve_player(conn, name)["player_id"]
+    except ValueError:
+        return None
+    row = conn.execute("SELECT roster_id FROM roster_players WHERE player_id = ?", (pid,)).fetchone()
+    return row[0] if row else None
+
+
+def false_premise_players(send: list[str], receive: list[str], send_picks: list[str], receive_picks: list[str],
+                          owner_of, me: int) -> list[str]:
+    """Names the user says they send who are on another team's roster, when the rest of the send side shows the
+    user meant it: "trade Jonah Coleman and my 2028 2nd for a 2027 1st". fix_sides would quietly turn that
+    around and the model would then call the result a good trade for a trade the user cannot make. A send side
+    made only of misplaced items is the model reversing the sides ("my 1st for Trey Benson"), which fix_sides
+    repairs, so it is not a false premise. The opposite slip, a player "received" who is already the user's,
+    is nearly always the model reversing the sides, so fix_sides keeps repairing it."""
+    def other(n):
+        o = owner_of(n)
+        return o is not None and o != me
+
+    moved_in = [n for n in send if other(n)]
+    kept_send = [n for n in send if n not in moved_in]
+    new_receive = [n for n in receive if owner_of(n) != me] + moved_in
+    new_send = kept_send + [n for n in receive if owner_of(n) == me]
+    swapped = bool(moved_in) and not new_send and not send_picks and bool(receive_picks) and bool(new_receive)
+    if moved_in and (kept_send or (send_picks and not swapped)):
+        return moved_in
+    return []
+
+
+def _premise_question(conn, names: list[str], me: int) -> str:
+    teams = context.team_names(conn)
+    lines = []
+    for n in names:
+        owner = _owner(conn, n)
+        who = valuation.resolve_player(conn, n)["full_name"]
+        lines.append(f"{who} is already on your roster" if owner == me else f"{who} is on {teams.get(owner, 'another team')}, not your roster")
+    return ("; ".join(lines) + ". I can't say whether to make a trade as asked. "
+            "Did you mean to acquire or send someone else, or can you say exactly who goes each way?")
 
 
 def fix_sides(conn, me: int, send: list[str], receive: list[str], send_picks: list[str],

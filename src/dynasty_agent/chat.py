@@ -159,7 +159,7 @@ def _is_generic(call: dict) -> bool:
     """True when a tool call names a description instead of a player, so the question is strategy talk."""
     args = call.get("arguments") or {}
     names = [*(args.get("send_players") or []), *(args.get("receive_players") or []), args.get("player") or ""]
-    return any(isinstance(n, str) and _GENERIC_PLAYER.search(n) for n in names)
+    return any(isinstance(n, str) and not tools._LOOKS_LIKE_PICK.search(n) and _GENERIC_PLAYER.search(n) for n in names)
 
 
 @dataclass
@@ -220,6 +220,11 @@ class ChatSession:
             return self._answer(turn, {"name": tools.EXPLAIN, "arguments": {"topic": topic}}, None, recent)
 
         calls, text, route_stats = self.client.route(self._router_messages(question), tools.TOOLS)
+        if not calls and last is not None and last.clarification and last.tool:
+            # The reply to a question the agent asked belongs to that question: say so in one message and route again.
+            merged = f"{last.question} ({question})"
+            calls, text, route_stats = self.client.route(
+                [{"role": "system", "content": ROUTE_SYSTEM}, {"role": "user", "content": merged}], tools.TOOLS)
         if not calls or _is_generic(calls[0]):
             return self._talk(turn)
         return self._answer(turn, calls[0], route_stats, recent)

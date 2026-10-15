@@ -120,6 +120,21 @@ def test_a_free_agent_is_never_moved_only_warned_about(league):
     assert not any("so it's evaluated" in w for w in r.compact["warnings"])
 
 
+def test_trading_away_a_player_you_dont_own_asks_instead_of_giving_a_verdict(league):
+    # "Should I trade Puka Nacua and my 2028 2nd for a 2027 1st?" with Puka on another team
+    r = tools.run_tool(league, "evaluate_trade", {"send_players": ["Puka Nacua"], "send_picks": ["2028 2nd"],
+                                                  "receive_picks": ["2027 1st"]})
+    assert r.clarification and "Puka Nacua is on" in r.clarification and "not your roster" in r.clarification
+    assert not r.compact and not r.numbers
+
+
+def test_a_free_agent_warning_becomes_the_headline(league):
+    r = tools.run_tool(league, "evaluate_trade", {"send_players": ["Jonah Coleman"], "receive_players": ["Player fa"]})
+    assert "free agent" in r.compact["headline"]
+    r = tools.run_tool(league, "evaluate_trade", {"send_players": ["Puka Nacua"], "receive_picks": ["2027 1st"]})
+    assert "headline" not in r.compact  # the side-fix note is in warnings, not a headline
+
+
 def test_none_in_an_optional_argument_means_blank(league):
     assert tools.run_tool(league, "waiver_targets", {"player": "none", "position": "null"}).numbers.startswith("FAAB targets")
 
